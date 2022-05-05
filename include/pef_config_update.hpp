@@ -184,10 +184,12 @@ static sdbusplus::bus::match::match
         std::string pefConfIface;
         uint8_t val = 0;
         std::vector<std::string> rec;
+        std::string subject;
+        std::string message;
         uint16_t selId = 0;
-        boost::container::flat_map<
-            std::string,
-            std::variant<uint8_t, uint16_t, std::vector<std::string>>>
+        boost::container::flat_map<std::string,
+                                   std::variant<uint8_t, uint16_t, std::string,
+                                                std::vector<std::string>>>
             propertiesChanged;
         msg.read(pefConfIface, propertiesChanged);
         std::string property = propertiesChanged.begin()->first;
@@ -201,6 +203,16 @@ static sdbusplus::bus::match::match
             rec = std::get<std::vector<std::string>>(
                 propertiesChanged.begin()->second);
         }
+
+        else if (property == "Subject")
+        {
+            subject = std::get<std::string>(propertiesChanged.begin()->second);
+        }
+        else if (property == "Message")
+        {
+            message = std::get<std::string>(propertiesChanged.begin()->second);
+        }
+
         else
         {
             val = std::get<uint8_t>(propertiesChanged.begin()->second);
@@ -223,6 +235,16 @@ static sdbusplus::bus::match::match
                     value[property] =
                         static_cast<std::vector<std::string>>(rec);
                 }
+
+                else if (property == "Subject")
+                {
+                    value[property] = static_cast<std::string>(subject);
+                }
+                else if (property == "Message")
+                {
+                    value[property] = static_cast<std::string>(message);
+                }
+
                 else
                 {
                     value[property] = static_cast<uint8_t>(val);

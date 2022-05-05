@@ -148,7 +148,30 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
     }
 
     std::string hostName;
+    std::string Subject;
+    std::string Message;
     std::string alertSubject;
+    try
+    {
+        Value variant;
+        auto method =
+            conn->new_method_call(pefBus, pefObj, PROP_INTF, METHOD_GET);
+        method.append(pefConfInfoIntf, "Subject");
+        auto reply = conn->call(method);
+        if (reply.is_method_error())
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Failed to get Subject");
+        }
+        reply.read(variant);
+        Subject = std::get<std::string>(variant);
+    }
+    catch (sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to get Subject");
+    }
+
     try
     {
         Value variant;
@@ -163,26 +186,53 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
         }
         reply.read(variant);
         hostName = std::get<std::string>(variant);
-        alertSubject = "Alert from " + hostName;
+        if (Subject.empty())
+        {
+            alertSubject = "Alert from " + hostName;
+        }
+        else
+        {
+            alertSubject = Subject;
+        }
     }
     catch (sdbusplus::exception_t& e)
     {
         alertSubject = "PEF Alert";
-        std::cerr << "Failed to get HostName\n";
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to get HostName");
     }
 
     std::string alertBody;
+
+    try
+    {
+        Value variant;
+
+        auto method =
+            conn->new_method_call(pefBus, pefObj, PROP_INTF, METHOD_GET);
+        method.append(pefConfInfoIntf, "Message");
+        auto reply = conn->call(method);
+        reply.read(variant);
+        Message = std::get<std::string>(variant);
+        alertBody = Message + "\r\n";
+    }
+    catch (sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to get Message");
+    }
+
     bool samEve = false;
     samEve = checkSampleEvent(eveMsg);
     if (samEve == true)
     {
-        alertBody = "Sensor Name : Not Found";
+        alertBody += "Sensor Name : Not Found";
     }
     else
     {
-        alertBody = "Sensor Name : " + sensorName + "\r\n" +
-                    "Sensor Type : " + sensorType + " \r\n" +
-                    "Description : " + eventDataMsg;
+        alertBody += "Sensor Name : " + sensorName + "\r\n" +
+                     "Sensor Type : " + sensorType + " \r\n" +
+                     "Description : " + eventDataMsg;
     }
     uint16_t mailstatus = 0;
     try

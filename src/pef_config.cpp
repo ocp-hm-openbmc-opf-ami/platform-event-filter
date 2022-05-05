@@ -67,6 +67,14 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
                 "Recipient",
                 static_cast<std::vector<std::string>>(pefConfData["Recipient"]),
                 sdbusplus::asio::PropertyPermission::readWrite);
+
+            pefConfInfoIface->register_property(
+                "Subject", static_cast<std::string>(pefConfData["Subject"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            pefConfInfoIface->register_property(
+                "Message", static_cast<std::string>(pefConfData["Message"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+
             pefConfInfoIface->initialize(true);
         }
 
