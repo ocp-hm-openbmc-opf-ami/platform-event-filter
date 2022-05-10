@@ -108,7 +108,7 @@ struct EventMsgData
     uint8_t sensorNum;
     uint8_t sensorType;
     uint8_t eventType;
-    uint8_t eventData[2];
+    uint8_t eventData[3];
 };
 
 static void eventFilteringProcess(struct EventMsgData* eventMsg);
