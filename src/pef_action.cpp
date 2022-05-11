@@ -123,28 +123,32 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
         sensorType = "unKnown sensorType";
     }
 
-    std::string eventDataMsg;
-    uint8_t eveType = (eveMsg->eventType & 0x7f);
-    uint8_t evnDat = (eveMsg->eventData[0] & 0x0F);
-
-    if (eveType == static_cast<uint8_t>(EventTypeCode::threshold))
+    std::string eventDataMsg = "unknown event";
+    if (!(eveMsg->msgStr).empty())
     {
-        eventDataMsg = THRESHOLD_EVENT_TABLE.find(evnDat)->second;
-    }
-    else if (eveType == static_cast<uint8_t>(EventTypeCode::generic))
-    {
-        auto offset = GENERIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
-        eventDataMsg = offset.find(evnDat)->second;
-    }
-    else if (eveType == static_cast<uint8_t>(EventTypeCode::sensor_specific))
-    {
-        auto offset =
-            SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
-        eventDataMsg = offset.find(evnDat)->second;
+        eventDataMsg = eveMsg->msgStr;
     }
     else
     {
-        eventDataMsg = "unknown event";
+        uint8_t eveType = (eveMsg->eventType & 0x7f);
+        uint8_t evnDat = (eveMsg->eventData[0] & 0x0F);
+
+        if (eveType == static_cast<uint8_t>(EventTypeCode::threshold))
+        {
+            eventDataMsg = THRESHOLD_EVENT_TABLE.find(evnDat)->second;
+        }
+        else if (eveType == static_cast<uint8_t>(EventTypeCode::generic))
+        {
+            auto offset = GENERIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
+            eventDataMsg = offset.find(evnDat)->second;
+        }
+        else if (eveType ==
+                 static_cast<uint8_t>(EventTypeCode::sensor_specific))
+        {
+            auto offset =
+                SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
+            eventDataMsg = offset.find(evnDat)->second;
+        }
     }
 
     std::string hostName;
@@ -704,7 +708,8 @@ static void eventFilteringProcess(struct EventMsgData* eventMsg)
 static void pefTask(const uint16_t& recId, const uint8_t& senType,
                     const uint8_t& senNum, const uint8_t& eveType,
                     const uint8_t& eveData1, const uint8_t& eveData2,
-                    const uint8_t& eveData3, const uint16_t& genId)
+                    const uint8_t& eveData3, const uint16_t& genId,
+                    const std::string& msgStr)
 {
     EventMsgData eveMsg = {};
     eveMsg.recordId = recId;
@@ -716,6 +721,7 @@ static void pefTask(const uint16_t& recId, const uint8_t& senType,
     eveMsg.eventData[0] = eveData1;
     eveMsg.eventData[1] = eveData2;
     eveMsg.eventData[2] = eveData3;
+    eveMsg.msgStr = msgStr;
 
     uint8_t pefCtl = 0;
     Value variant;

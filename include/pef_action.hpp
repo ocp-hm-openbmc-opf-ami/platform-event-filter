@@ -109,6 +109,7 @@ struct EventMsgData
     uint8_t sensorType;
     uint8_t eventType;
     uint8_t eventData[3];
+    std::string msgStr;
 };
 
 static void eventFilteringProcess(struct EventMsgData* eventMsg);
