@@ -112,6 +112,7 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
     std::string sensorPath = getPathFromSensorNumber(eveMsg->sensorNum);
     std::string sensorType = getSensorTypeStringFromPath(sensorPath.c_str());
     std::string sensorName;
+    std::string severity;
     std::size_t found = sensorPath.find_last_of("/\\");
     sensorName = sensorPath.substr(found + 1);
     if (sensorName.empty())
@@ -123,6 +124,23 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
         sensorType = "unKnown sensorType";
     }
 
+    uint8_t evnDat = (eveMsg->eventData[0] & 0x0F);
+    bool assert = (eveMsg->eventType & 0x80) ? false : true;
+
+    if (evnDat == 0x02 || evnDat == 0x09)
+    {
+        severity = "Critical";
+    }
+    else if (evnDat == 0x00 || evnDat == 0x07)
+    {
+        severity = "Warning";
+    }
+
+    if (!assert)
+    {
+        severity = "Ok";
+    }
+
     std::string eventDataMsg = "unknown event";
     if (!(eveMsg->msgStr).empty())
     {
@@ -131,7 +149,6 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
     else
     {
         uint8_t eveType = (eveMsg->eventType & 0x7f);
-        uint8_t evnDat = (eveMsg->eventData[0] & 0x0F);
 
         if (eveType == static_cast<uint8_t>(EventTypeCode::threshold))
         {
@@ -192,7 +209,14 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
         hostName = std::get<std::string>(variant);
         if (Subject.empty())
         {
-            alertSubject = "Alert from " + hostName;
+            if (severity == "Ok")
+            {
+                alertSubject = "Message from " + hostName;
+            }
+            else
+            {
+                alertSubject = "Alert from " + hostName;
+            }
         }
         else
         {
@@ -236,6 +260,7 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
     {
         alertBody += "Sensor Name : " + sensorName + "\r\n" +
                      "Sensor Type : " + sensorType + " \r\n" +
+                     "Severity    : " + severity + "\r\n" +
                      "Description : " + eventDataMsg;
     }
     uint16_t mailstatus = 0;
@@ -714,7 +739,7 @@ static void pefTask(const uint16_t& recId, const uint8_t& senType,
     EventMsgData eveMsg = {};
     eveMsg.recordId = recId;
     eveMsg.sensorType = senType;
-    eveMsg.eventType = (eveType & 0x7f);
+    eveMsg.eventType = eveType;
     eveMsg.sensorNum = senNum;
     eveMsg.generatorId1 = ((genId >> 8) & 0xff);
     eveMsg.generatorId2 = (genId & 0xff);
