@@ -34,6 +34,10 @@ static constexpr const char* alertStringTableObj =
     "/xyz/openbmc_project/PefAlertManager/AlertStringTable/Entry";
 static constexpr const char* alertStringTableIntf =
     "xyz.openbmc_project.pef.AlertStringTable";
+static constexpr const char* destStringTableObj =
+    "/xyz/openbmc_project/PefAlertManager/DestinationSelector/Entry";
+static constexpr const char* destStringTableIntf =
+    "xyz.openbmc_project.pef.DestinationSelectorTable";
 
 // static constexpr const char* pefConfFilePath =
 // "/usr/share/pef-alert-manager/pef-alert-manager.json";

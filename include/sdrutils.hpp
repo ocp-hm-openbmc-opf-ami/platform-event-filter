@@ -24,6 +24,27 @@ using SensorNumMap = boost::bimap<int, std::string>;
 
 namespace details
 {
+inline static void filterSensors(SensorSubTree& subtree)
+{
+    subtree.erase(
+        std::remove_if(subtree.begin(), subtree.end(),
+                       [](SensorSubTree::value_type& kv) {
+                           auto& [_, serviceToIfaces] = kv;
+
+                           static std::array<const char*, 2> serviceFilter = {
+                               "xyz.openbmc_project.Pmt",
+                               "xyz.openbmc_project.pldm"};
+
+                           for (const char* service : serviceFilter)
+                           {
+                               serviceToIfaces.erase(service);
+                           }
+
+                           return serviceToIfaces.empty();
+                       }),
+        subtree.end());
+}
+
 inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
 {
     static std::shared_ptr<SensorSubTree> sensorTreePtr;
@@ -64,8 +85,11 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
                              "/xyz/openbmc_project/object_mapper",
                              "xyz.openbmc_project.ObjectMapper", "GetSubTree");
     static constexpr const auto depth = 2;
-    static constexpr std::array<const char*, 3> interfaces = {
+    static constexpr std::array<const char*, 6> interfaces = {
         "xyz.openbmc_project.Sensor.Value",
+        "xyz.openbmc_project.Inventory.Item.Cpu",
+        "xyz.openbmc_project.Inventory.Item.Watchdog",
+        "xyz.openbmc_project.Sensor.State",
         "xyz.openbmc_project.Sensor.Threshold.Warning",
         "xyz.openbmc_project.Sensor.Threshold.Critical"};
     mapperCall.append("/xyz/openbmc_project/sensors", depth, interfaces);
@@ -80,6 +104,7 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
         phosphor::logging::log<phosphor::logging::level::ERR>(e.what());
         return sensorTreeUpdated;
     }
+    details::filterSensors(*sensorTreePtr);
     subtree = sensorTreePtr;
     sensorTreeUpdated = true;
     return sensorTreeUpdated;
@@ -145,6 +170,15 @@ enum class SensorTypeCodes : uint8_t
     voltage = 0x2,
     current = 0x3,
     fan = 0x4,
+    processor = 0x07,
+    powersupply = 0x08,
+    powerunit = 0x09,
+    systemEvent = 0x12,
+    osBootStatus = 0x1F,
+    os = 0x20,
+    acpisystem = 0x22,
+    watchdog2 = 0x23,
+    battery = 0x29,
     other = 0xB,
 };
 
@@ -154,6 +188,15 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
                  {"current", SensorTypeCodes::current},
                  {"fan_tach", SensorTypeCodes::fan},
                  {"fan_pwm", SensorTypeCodes::fan},
+                 {"cpu", SensorTypeCodes::processor},
+                 {"powersupply", SensorTypeCodes::powersupply},
+                 {"powerunit", SensorTypeCodes::powerunit},
+                 {"system_event", SensorTypeCodes::systemEvent},
+                 {"os_boot_status", SensorTypeCodes::osBootStatus},
+                 {"os", SensorTypeCodes::os},
+                 {"acpisystem", SensorTypeCodes::acpisystem},
+                 {"watchdog", SensorTypeCodes::watchdog2},
+                 {"battery", SensorTypeCodes::battery},
                  {"power", SensorTypeCodes::other}}};
 
 inline static std::string getSensorTypeStringFromPath(const std::string& path)
@@ -232,4 +275,35 @@ inline static std::string getPathFromSensorNumber(uint8_t sensorNum)
         phosphor::logging::log<phosphor::logging::level::ERR>(e.what());
         return std::string();
     }
+}
+
+inline static std::string retrieveSensorTypeFromPath(std::string& path,
+                                                     const uint8_t sensorType)
+{
+    uint8_t typeFromPath = getSensorTypeFromPath(path);
+    if (typeFromPath != sensorType)
+    {
+        path.clear(); // Assume the sensor's D-Bus object is not availalbe, if
+                      // the sensor type is not matching
+
+        for (const auto& itr : sensorTypes)
+        {
+            if (static_cast<uint8_t>(itr.second) == sensorType)
+            {
+                return itr.first;
+            }
+        }
+        return "Unknown";
+    }
+    return getSensorTypeStringFromPath(path);
+}
+
+inline static std::string getSensorNameFromPath(const std::string& path)
+{
+    if (!path.empty())
+    {
+        std::size_t found = path.find_last_of("/\\");
+        return path.substr(found + 1);
+    }
+    return "Unknown";
 }

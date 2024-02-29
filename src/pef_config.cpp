@@ -387,6 +387,24 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
                 sdbusplus::asio::PropertyPermission::readWrite);
             alertStringTblIface->initialize(true);
         }
+
+        for (const auto& destSelTable : data["DestinationSelector"])
+        {
+            int lanDestEntry = 0;
+            lanDestEntry = destSelTable["LanDestination"];
+            std::string destStrObjName = destStringTableObj +
+                                         std::to_string(lanDestEntry);
+            std::shared_ptr<sdbusplus::asio::dbus_interface> destSelIface =
+                objectServer.add_interface(destStrObjName, destStringTableIntf);
+            destSelIface->register_property(
+                "LanChannel", static_cast<uint8_t>(destSelTable["LanChannel"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            destSelIface->register_property(
+                "DestinationType",
+                static_cast<uint8_t>(destSelTable["DestinationType"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            destSelIface->initialize(true);
+        }
     }
     catch (nlohmann::json::exception& e)
     {

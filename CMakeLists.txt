@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 project(pef-alert-manager CXX)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -24,6 +24,8 @@ pkg_check_modules(SYSTEMD libsystemd REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDBUSPLUSPLUS sdbusplus REQUIRED)
 
+find_library(SNMP_LIBRARY NAMES snmp)
+
 add_executable(pef-configuration ${SOURCE_FILES})
 add_executable(pef-event-filtering ${SRC_FILES})
 
@@ -36,6 +38,9 @@ target_link_libraries(pef-event-filtering systemd)
 target_link_libraries(pef-event-filtering boost_coroutine)
 target_link_libraries(pef-event-filtering sdbusplus -lstdc++fs)
 target_link_libraries(pef-event-filtering ${Boost_LIBRARIES})
+target_link_libraries(pef-event-filtering ${SNMP_LIBRARY})
+pkg_get_variable(SYSTEMD_SYSTEM_UNIT_DIR systemd systemdsystemunitdir)
+
 
 link_directories(${EXTERNAL_INSTALL_LOCATION}/lib)
 
@@ -46,7 +51,7 @@ set(CONFIG_FILES
     ${PROJECT_SOURCE_DIR}/pef_configurations/pef-alert-manager.json)
 
 install(TARGETS pef-configuration DESTINATION bin)
-install(FILES ${SERVICE_FILES} DESTINATION /lib/systemd/system/)
+install(FILES ${SERVICE_FILES} DESTINATION ${SYSTEMD_SYSTEM_UNIT_DIR})
 install(FILES ${CONFIG_FILES} DESTINATION /usr/share/pef-alert-manager/)
 
 install(TARGETS pef-event-filtering DESTINATION bin)

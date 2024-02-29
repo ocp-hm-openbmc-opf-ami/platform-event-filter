@@ -66,3 +66,9 @@ struct AlertStringTbl
     uint16_t AlertString1;
     uint16_t AlertString2;
 };
+
+struct pefDestSelector
+{
+    uint8_t LanChannel;
+    uint8_t DestinationType;
+};

@@ -27,6 +27,9 @@
 #define RESET_ACTION 0x04
 #define POWER_OFF_ACTION 0x02
 #define ALERT_ACTION 0x01
+#define EVENT_TYPE 0x7f
+#define EVENT_DIRECTION 0x80
+#define EVENT_STATE 0x0f
 
 using namespace std::chrono;
 
@@ -75,6 +78,11 @@ static constexpr const char* pefPostponeTmrIface =
     "xyz.openbmc_project.pef.PEFPostponeTimer";
 static constexpr const char* pefPostponeCountDownIface =
     "xyz.openbmc_project.pef.CountdownTmr";
+static constexpr const char* destStringTableIntf =
+    "xyz.openbmc_project.pef.DestinationSelectorTable";
+std::string destObjBase =
+    "/xyz/openbmc_project/PefAlertManager/DestinationSelector/Entry";
+
 /*mail alert*/
 static constexpr const char* mailService = "xyz.openbmc_project.mail";
 static constexpr const char* mailObjPath = "/xyz/openbmc_project/mail/alert";
@@ -447,4 +455,13 @@ static bool SetFilterEnable(std::vector<uint8_t> FilterEnable)
     }
 
     return true;
+}
+
+static uint16_t sendSNMPAlert(struct EventMsgData);
+
+uint64_t getTimeStamp()
+{
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t_c = std::chrono::system_clock::to_time_t(now);
+    return static_cast<uint64_t>(t_c);
 }

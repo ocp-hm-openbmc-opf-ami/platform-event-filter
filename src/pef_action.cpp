@@ -9,6 +9,8 @@
 
 #include "pef_config_update.hpp"
 
+#include <snmp.hpp>
+#include <snmp_notification.hpp>
 #include <string>
 
 static bool getPowerStatus()
@@ -106,39 +108,114 @@ static bool checkSampleEvent(struct EventMsgData* eveMsgData)
     return false;
 }
 
+static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
+{
+    std::string sensorPath = getPathFromSensorNumber(eventMsg->sensorNum);
+    const std::string sensorType =
+        retrieveSensorTypeFromPath(sensorPath, eventMsg->sensorType);
+    const std::string sensorName = getSensorNameFromPath(sensorPath);
+    std::string severity;
+    std::string direction = "Asserted";
+    uint8_t sensorEventType = (eventMsg->eventType & EVENT_TYPE);
+    uint8_t eventData = (eventMsg->eventData[0] & EVENT_STATE);
+    bool assert = (eventMsg->eventType & EVENT_DIRECTION) ? false : true;
+    if (sensorEventType != static_cast<uint8_t>(EventTypeCode::sensor_specific))
+    {
+        switch (eventData)
+        {
+            case 0x02:
+            case 0x09:
+                severity = "Critical";
+                break;
+            case 0x00:
+            case 0x07:
+                severity = "Warning";
+                break;
+        }
+        if (!assert)
+        {
+            severity = "OK";
+            direction = "Deasserted";
+        }
+    }
+    else
+    {
+        severity = "Information";
+    }
+    std::string eventDataMsg = "unknown event";
+    if (!(eventMsg->msgStr).empty())
+    {
+        eventDataMsg = eventMsg->msgStr;
+    }
+    else
+    {
+        uint8_t eventType = (eventMsg->eventType & EVENT_TYPE);
+        if (eventType == static_cast<uint8_t>(EventTypeCode::threshold))
+        {
+            eventDataMsg = THRESHOLD_EVENT_TABLE.find(eventData)->second;
+        }
+        else if (eventType == static_cast<uint8_t>(EventTypeCode::generic))
+        {
+            auto offset =
+                GENERIC_EVENT_TABLE.find(eventMsg->sensorType)->second;
+            eventDataMsg = offset.find(eventData)->second;
+        }
+        else if (eventType ==
+                 static_cast<uint8_t>(EventTypeCode::sensor_specific))
+        {
+            auto offset =
+                SENSOR_SPECIFIC_EVENT_TABLE.find(eventMsg->sensorType)->second;
+            std::string eventStr = offset.find(eventData)->second;
+            eventDataMsg = sensorName + " " + direction + " " + eventStr;
+        }
+    }
+    auto timeStamp = getTimeStamp();
+    try
+    {
+        phosphor::network::snmp::sendTrap<
+            phosphor::network::snmp::OBMCErrorNotification>(
+            static_cast<uint32_t>(eventMsg->recordId), timeStamp,
+            static_cast<uint8_t>(eventData), eventDataMsg);
+    }
+    catch (sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to send SNMP Trap");
+    }
+
+    return 0;
+}
 static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
                               uint8_t eveLog)
 {
     std::string sensorPath = getPathFromSensorNumber(eveMsg->sensorNum);
-    std::string sensorType = getSensorTypeStringFromPath(sensorPath.c_str());
-    std::string sensorName;
+    const std::string sensorType =
+        retrieveSensorTypeFromPath(sensorPath, eveMsg->sensorType);
+    const std::string sensorName = getSensorNameFromPath(sensorPath);
     std::string severity;
-    std::size_t found = sensorPath.find_last_of("/\\");
-    sensorName = sensorPath.substr(found + 1);
-    if (sensorName.empty())
-    {
-        sensorName = "unknown sensorName";
-    }
-    if (sensorType.empty())
-    {
-        sensorType = "unKnown sensorType";
-    }
-
+    uint8_t sensorEveType = (eveMsg->eventType & 0x7f);
     uint8_t evnDat = (eveMsg->eventData[0] & 0x0F);
     bool assert = (eveMsg->eventType & 0x80) ? false : true;
+    if (sensorEveType != static_cast<uint8_t>(EventTypeCode::sensor_specific))
+    {
+        if (evnDat == 0x02 || evnDat == 0x09)
+        {
+            severity = "Critical";
+        }
+        else if (evnDat == 0x00 || evnDat == 0x07)
+        {
+            severity = "Warning";
+        }
 
-    if (evnDat == 0x02 || evnDat == 0x09)
-    {
-        severity = "Critical";
+        if (!assert)
+        {
+            severity = "Ok";
+        }
     }
-    else if (evnDat == 0x00 || evnDat == 0x07)
+    else
     {
-        severity = "Warning";
-    }
-
-    if (!assert)
-    {
-        severity = "Ok";
+        // Initilize Severity for Discrete sensor
+        severity = "Information";
     }
 
     std::string eventDataMsg = "unknown event";
@@ -468,8 +545,8 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                         reply.read(alertPolicyValues);
                         AlertPlyTbl.AlertNum =
                             std::get<uint8_t>(alertPolicyValues.at("AlertNum"));
-                        // AlertPlyTbl.ChannelDestSel =
-                        // std::get<uint8_t>(alertPolicyValues.at("ChannelDestSel"));
+                        AlertPlyTbl.ChannelDestSel = std::get<uint8_t>(
+                            alertPolicyValues.at("ChannelDestSel"));
                         // AlertPlyTbl.AlertStingkey =
                         // std::get<uint8_t>(alertPolicyValues.at("AlertStingkey"));
                     }
@@ -484,62 +561,113 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                     if (0 != (AlertPlyTbl.AlertNum & 0x08))
                     {
                         uint16_t alertStatus;
-                        std::vector<std::string> recipient;
-                        Value variant;
+                        pefDestSelector pefDestInfo;
+                        pefDestInfo = {};
 
                         try
                         {
+                            PropertyMap pefCfgValues;
+                            uint8_t alertTable = AlertPlyTbl.ChannelDestSel &
+                                                 0x07;
+                            std::string destObjPath =
+                                destObjBase + std::to_string(alertTable);
                             auto method = conn->new_method_call(
-                                pefBus, pefObj, PROP_INTF, METHOD_GET);
-                            method.append(pefConfInfoIntf, "Recipient");
+                                pefBus, destObjPath.c_str(), PROP_INTF,
+                                METHOD_GET_ALL);
+                            method.append(destStringTableIntf);
                             auto reply = conn->call(method);
-                            reply.read(variant);
-                            recipient =
-                                std::get<std::vector<std::string>>(variant);
+                            if (reply.is_method_error())
+                            {
+                                phosphor::logging::log<
+                                    phosphor::logging::level::ERR>(
+                                    "Failed to get all Destination Selector "
+                                    "properties");
+                            }
+                            reply.read(pefCfgValues);
+                            pefDestInfo.DestinationType = std::get<uint8_t>(
+                                pefCfgValues.at("DestinationType"));
                         }
                         catch (sdbusplus::exception_t& e)
                         {
                             phosphor::logging::log<
                                 phosphor::logging::level::ERR>(
-                                "Failed to get recipient",
+                                "Failed to fetch Destination conf info for Pef",
                                 phosphor::logging::entry("EXCEPTION=%s",
                                                          e.what()));
-                            return;
                         }
-                        for (int i = 0; i < recipient.size(); i++)
+                        if (pefDestInfo.DestinationType == 1)
                         {
-                            if (recipient[i].empty())
+                            std::vector<std::string> recipient;
+                            Value variant;
+                            try
                             {
-                                continue;
+                                auto method = conn->new_method_call(
+                                    pefBus, pefObj, PROP_INTF, METHOD_GET);
+                                method.append(pefConfInfoIntf, "Recipient");
+                                auto reply = conn->call(method);
+                                reply.read(variant);
+                                recipient =
+                                    std::get<std::vector<std::string>>(variant);
                             }
-                            alertStatus = sendSmtpAlert(recipient[i], eveMsg,
-                                                        pefcfgInfo.PEFControl);
+                            catch (sdbusplus::exception_t& e)
+                            {
+                                phosphor::logging::log<
+                                    phosphor::logging::level::ERR>(
+                                    "Failed to get recipient",
+                                    phosphor::logging::entry("EXCEPTION=%s",
+                                                             e.what()));
+                                return;
+                            }
 
+                            for (auto& rec : recipient)
+                            {
+                                alertStatus = sendSmtpAlert(
+                                    rec, eveMsg, pefcfgInfo.PEFControl);
+
+                                if (alertStatus == 0)
+                                {
+                                    phosphor::logging::log<
+                                        phosphor::logging::level::INFO>(
+                                        "Alert Send Sucessfully!!!");
+                                    try
+                                    {
+                                        auto method = conn->new_method_call(
+                                            pefBus, pefObj,
+                                            "org.freedesktop.DBus.Properties",
+                                            "Set");
+                                        method.append(
+                                            pefConfInfoIntf,
+                                            "LastBMCProcessedEventID");
+                                        method.append(std::variant<uint16_t>(
+                                            eveMsg->recordId));
+                                        auto reply = conn->call(method);
+                                    }
+                                    catch (std::exception& e)
+                                    {
+                                        phosphor::logging::log<
+                                            phosphor::logging::level::ERR>(
+                                            "Failed to set "
+                                            "LastBMCProcessedEventID",
+                                            phosphor::logging::entry(
+                                                "EXCEPTION=%s", e.what()));
+                                    }
+                                }
+                            }
+                        }
+                        else if (pefDestInfo.DestinationType == 0)
+                        {
+                            alertStatus = sendSNMPAlert(eveMsg);
                             if (alertStatus == 0)
                             {
                                 phosphor::logging::log<
                                     phosphor::logging::level::INFO>(
-                                    "Alert Send Sucessfully!!!");
-                                try
-                                {
-                                    auto method = conn->new_method_call(
-                                        pefBus, pefObj,
-                                        "org.freedesktop.DBus.Properties",
-                                        "Set");
-                                    method.append(pefConfInfoIntf,
-                                                  "LastBMCProcessedEventID");
-                                    method.append(std::variant<uint16_t>(
-                                        eveMsg->recordId));
-                                    auto reply = conn->call(method);
-                                }
-                                catch (std::exception& e)
-                                {
-                                    phosphor::logging::log<
-                                        phosphor::logging::level::ERR>(
-                                        "Failed to set LastBMCProcessedEventID",
-                                        phosphor::logging::entry("EXCEPTION=%s",
-                                                                 e.what()));
-                                }
+                                    "SNMP Trap Send Sucessfully!!!");
+                            }
+                            else
+                            {
+                                phosphor::logging::log<
+                                    phosphor::logging::level::INFO>(
+                                    "Failed to send SNMP Trap");
                             }
                         }
                     }
