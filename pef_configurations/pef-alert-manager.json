@@ -7,10 +7,6 @@
             "PEFAlertStartupDly": 0,
             "LastBMCProcessedEventID": 65535,
             "LastSWProcessedEventID": 65535,
-            "Recipient": [
-                "",
-                ""
-            ],
             "Subject": "",
             "Message": ""
         }

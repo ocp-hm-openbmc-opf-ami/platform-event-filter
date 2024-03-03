@@ -185,8 +185,7 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
 
     return 0;
 }
-static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
-                              uint8_t eveLog)
+static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t eveLog)
 {
     std::string sensorPath = getPathFromSensorNumber(eveMsg->sensorNum);
     const std::string sensorType =
@@ -345,7 +344,7 @@ static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
     {
         auto sendAlert = conn->new_method_call(mailService, mailObjPath,
                                                mailIface, sendMailMethod);
-        sendAlert.append(rec, alertSubject.c_str(), alertBody.c_str());
+        sendAlert.append(alertSubject.c_str(), alertBody.c_str());
         auto replyStatus = conn->call(sendAlert);
         if (replyStatus.is_method_error())
         {
@@ -597,32 +596,8 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                         }
                         if (pefDestInfo.DestinationType == 1)
                         {
-                            std::vector<std::string> recipient;
-                            Value variant;
-                            try
-                            {
-                                auto method = conn->new_method_call(
-                                    pefBus, pefObj, PROP_INTF, METHOD_GET);
-                                method.append(pefConfInfoIntf, "Recipient");
-                                auto reply = conn->call(method);
-                                reply.read(variant);
-                                recipient =
-                                    std::get<std::vector<std::string>>(variant);
-                            }
-                            catch (sdbusplus::exception_t& e)
-                            {
-                                phosphor::logging::log<
-                                    phosphor::logging::level::ERR>(
-                                    "Failed to get recipient",
-                                    phosphor::logging::entry("EXCEPTION=%s",
-                                                             e.what()));
-                                return;
-                            }
-
-                            for (auto& rec : recipient)
-                            {
                                 alertStatus = sendSmtpAlert(
-                                    rec, eveMsg, pefcfgInfo.PEFControl);
+                                     eveMsg, pefcfgInfo.PEFControl);
 
                                 if (alertStatus == 0)
                                 {
@@ -652,7 +627,6 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                                                 "EXCEPTION=%s", e.what()));
                                     }
                                 }
-                            }
                         }
                         else if (pefDestInfo.DestinationType == 0)
                         {

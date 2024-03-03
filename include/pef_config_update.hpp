@@ -198,12 +198,7 @@ static sdbusplus::bus::match::match
         {
             selId = std::get<uint16_t>(propertiesChanged.begin()->second);
         }
-        else if (property == "Recipient")
-        {
-            rec = std::get<std::vector<std::string>>(
-                propertiesChanged.begin()->second);
-        }
-
+       
         else if (property == "Subject")
         {
             subject = std::get<std::string>(propertiesChanged.begin()->second);
@@ -230,12 +225,7 @@ static sdbusplus::bus::match::match
                 {
                     value[property] = static_cast<uint16_t>(selId);
                 }
-                else if (property == "Recipient")
-                {
-                    value[property] =
-                        static_cast<std::vector<std::string>>(rec);
-                }
-
+               
                 else if (property == "Subject")
                 {
                     value[property] = static_cast<std::string>(subject);

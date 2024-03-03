@@ -127,8 +127,7 @@ static uint8_t pefEveDataMatch(uint8_t, uint8_t, uint8_t, uint8_t);
 static void performPefAction(std::vector<std::string>&,
                              struct EventMsgData* eveMsg);
 
-static uint16_t sendSmtpAlert(std::string rec, struct EventMsgData* eveMsg,
-                              uint8_t);
+static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t);
 
 static int initiateChassisStateTransition(std::string);
 
