@@ -8,11 +8,50 @@
 #include "pef_action.hpp"
 
 #include "pef_config_update.hpp"
-
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <snmp.hpp>
 #include <snmp_notification.hpp>
 #include <string>
 
+std::string getCurrentTime() {
+    std::time_t currentTime = std::time(nullptr);
+    struct tm *timeInfo = std::localtime(&currentTime);
+
+    char buffer[80];
+    std::strftime(buffer, sizeof(buffer), "%a %b %d %H:%M:%S %Z %Y", timeInfo);
+
+    return buffer;
+}
+
+std::string getIPAddress() {
+    struct ifaddrs *ifAddrStruct = nullptr;
+    struct ifaddrs *ifa = nullptr;
+    void *addrPtr = nullptr;
+    std::string ipAddress;
+
+    getifaddrs(&ifAddrStruct);
+
+    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr->sa_family == AF_INET) { 
+            addrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            char buffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, addrPtr, buffer, sizeof(buffer));
+            if (std::strcmp(ifa->ifa_name, "lo") != 0) { 
+                ipAddress = buffer;
+                break;
+            }
+        }
+    }
+
+    if (ifAddrStruct != nullptr) {
+        freeifaddrs(ifAddrStruct);
+    }
+
+    return ipAddress;
+}
 static bool getPowerStatus()
 {
     bool pwrGood = false;
@@ -119,6 +158,9 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
     uint8_t sensorEventType = (eventMsg->eventType & EVENT_TYPE);
     uint8_t eventData = (eventMsg->eventData[0] & EVENT_STATE);
     bool assert = (eventMsg->eventType & EVENT_DIRECTION) ? false : true;
+
+    std::string bmcIPAddress = getIPAddress();
+
     if (sensorEventType != static_cast<uint8_t>(EventTypeCode::sensor_specific))
     {
         switch (eventData)
@@ -169,13 +211,29 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
             eventDataMsg = sensorName + " " + direction + " " + eventStr;
         }
     }
-    auto timeStamp = getTimeStamp();
+    std::string timeStamp = getCurrentTime();
+    std::string hostName;
+    std::string EventSubjectSN;
+    std::string adddata;
+    Value variant;
+    auto method = conn->new_method_call(networkService, networkObjPath,
+                                            PROP_INTF, METHOD_GET);
+    method.append(networkIface, "HostName");
+    auto reply = conn->call(method);
+    if (reply.is_method_error())
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>("Failed to get HostName method");
+    }
+    reply.read(variant);
+    hostName = std::get<std::string>(variant);
+    hostName = hostName + ":" + bmcIPAddress;
+
     try
     {
         phosphor::network::snmp::sendTrap<
             phosphor::network::snmp::OBMCErrorNotification>(
             static_cast<uint32_t>(eventMsg->recordId), timeStamp,
-            static_cast<uint8_t>(eventData), eventDataMsg);
+            severity, eventDataMsg, sensorName ,direction ,EventSubjectSN, adddata ,hostName);
     }
     catch (sdbusplus::exception_t& e)
     {
