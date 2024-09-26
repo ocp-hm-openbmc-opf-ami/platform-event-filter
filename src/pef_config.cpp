@@ -38,6 +38,18 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
         auto data = parseJSONConfig(pefConfFilePath);
         for (const auto& pefConfData : data["PEFConfInfo"])
         {
+            pefConfInfoIface->register_property(
+                "ipmiPefVersion",
+                static_cast<uint8_t>(pefConfData["ipmiPefVersion"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            pefConfInfoIface->register_property(
+                "actionSupported",
+                static_cast<uint8_t>(pefConfData["actionSupported"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            pefConfInfoIface->register_property(
+                "maxEventTblEntry",
+                static_cast<uint8_t>(pefConfData["maxEventTblEntry"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
             std::shared_ptr<sdbusplus::asio::dbus_interface> pefConfInfoIface =
                 objectServer.add_interface(pefObj, pefConfInfoIntf);
             pefConfInfoIface->register_property(
