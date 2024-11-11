@@ -40,6 +40,18 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
         {
             std::shared_ptr<sdbusplus::asio::dbus_interface> pefConfInfoIface =
                 objectServer.add_interface(pefObj, pefConfInfoIntf);
+	    pefConfInfoIface->register_property(
+                "Version",
+                static_cast<uint8_t>(pefConfData["Version"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            pefConfInfoIface->register_property(
+                "ActionSupported",
+                static_cast<uint8_t>(pefConfData["ActionSupported"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
+            pefConfInfoIface->register_property(
+                "MaxEventTblEntry",
+                static_cast<uint8_t>(pefConfData["MaxEventTblEntry"]),
+                sdbusplus::asio::PropertyPermission::readWrite);
             pefConfInfoIface->register_property(
                 "PEFControl", static_cast<uint8_t>(pefConfData["PEFControl"]),
                 sdbusplus::asio::PropertyPermission::readWrite);
