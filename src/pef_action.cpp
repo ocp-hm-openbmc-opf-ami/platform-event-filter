@@ -35,7 +35,7 @@ std::string getIPAddress() {
     getifaddrs(&ifAddrStruct);
 
     for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr->sa_family == AF_INET) { 
+        if ((ifa->ifa_addr != nullptr ) && (ifa->ifa_addr->sa_family == AF_INET)) {
             addrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
             char buffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, addrPtr, buffer, sizeof(buffer));
