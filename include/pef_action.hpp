@@ -2,13 +2,14 @@
 #include "pef_utils.hpp"
 
 #include <boost/asio/io_service.hpp>
-#include <chrono>
-#include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/message.hpp>
 #include <sdrutils.hpp>
+
+#include <chrono>
+#include <fstream>
+#include <iostream>
 
 #define MAX_EVT_FILTER_ENTRIES 40
 #define ALERT_POLICY_SET 4
@@ -153,78 +154,79 @@ const std::map<uint8_t, std::string> THRESHOLD_EVENT_TABLE = {
     {0x08, "upperCritGoingLow"},    {0x09, "upperCritGoingHigh"}};
 
 const std::map<std::uint8_t, std::map<uint8_t, std::string>>
-    SENSOR_SPECIFIC_EVENT_TABLE = {{0x0C,
-                                    {{0x00, "CorrectableECC"},
-                                     {0x01, "UncorrectableECC"},
-                                     {0x02, "Parity"},
-                                     {0x03, "MemoryScrubFailed"},
-                                     {0x04, "MemoryDeviceDisabled"},
-                                     {0x05, "CorrectableECClogging"},
-                                     {0x06, "PresenceDetected"},
-                                     {0x07, "ConfigurationError"},
-                                     {0x08, "Spare"},
-                                     {0x09, "Throttled"},
-                                     {0x0a, "CriticalOvertemp"}}},
-                                   {0x0D,
-                                    {{0x00, "DrivePresent"},
-                                     {0x01, "DriveFault"},
-                                     {0x02, "PredictiveFailure"},
-                                     {0x03, "HotSpare"},
-                                     {0x04, "ParityCheck"},
-                                     {0x05, "InCriticalArray"},
-                                     {0x06, "InFailedArray"},
-                                     {0x07, "RebuildInProgress"},
-                                     {0x08, "RebuildAborted"}}},
-                                   {0x05,
-                                    {{0x00, "GenChassisIntrusion"},
-                                     {0x01, "DriveBayIntrusion"},
-                                     {0x02, "IOCardAreaIntrusion"},
-                                     {0x03, "ProcessorAreaIntrusion"},
-                                     {0x04, "LanLost"},
-                                     {0x05, "UnauthorizedDock"},
-                                     {0x06, "FanAreaIntrusion"}}},
-                                   {0x07,
-                                    {{0x00, "Ierr"},
-                                     {0x01, "ThermalTrip"},
-                                     {0x02, "Frb1"},
-                                     {0x03, "Frb2"},
-                                     {0x04, "Frb3"},
-                                     {0x05, "ConfigurationError"},
-                                     {0x06, "UncorrectableCpuComplexError"},
-                                     {0x07, "ProcessorPresenceDetected"},
-                                     {0x08, "ProcessorDisabled"},
-                                     {0x09, "TerminatorPresenceDetected"},
-                                     {0x0a, "ProcessorAutomaticallyThrottled"},
-                                     {0x0b, "MachineCheckException"},
-                                     {0x0c, "CorrectableMachineCheck"}}},
-                                   {0x10,
-                                    {{0x00, "Correctablememoryerror"},
-                                     {0x01, "Eventloggingdisabled"},
-                                     {0x02, "Logareareset"},
-                                     {0x03, "Alleventloggingdisabled"},
-                                     {0x04, "Logfull"},
-                                     {0x05, "Logalmostfull"}}},
-                                   {0x22,
-                                    {{0x00, "S0_G0"},
-                                     {0x01, "S1"},
-                                     {0x02, "S2"},
-                                     {0x03, "S3"},
-                                     {0x04, "S4"},
-                                     {0x05, "S5_G2"},
-                                     {0x06, "S4_S5"},
-                                     {0x07, "G3"},
-                                     {0x08, "S1_S2_S3"},
-                                     {0x09, "G1"},
-                                     {0x0a, "S5"},
-                                     {0x0b, "LegacyOn"},
-                                     {0x0c, "LegacyOff"},
-                                     {0x0e, "ACPI_Unknown"}}},
-                                   {0x23,
-                                    {{0x00, "Timerexpired"},
-                                     {0x01, "Hardreset"},
-                                     {0x02, "Powerdown"},
-                                     {0x03, "Powercycle"},
-                                     {0x08, "Timerinterrupt"}}}};
+    SENSOR_SPECIFIC_EVENT_TABLE = {
+        {0x0C,
+         {{0x00, "CorrectableECC"},
+          {0x01, "UncorrectableECC"},
+          {0x02, "Parity"},
+          {0x03, "MemoryScrubFailed"},
+          {0x04, "MemoryDeviceDisabled"},
+          {0x05, "CorrectableECClogging"},
+          {0x06, "PresenceDetected"},
+          {0x07, "ConfigurationError"},
+          {0x08, "Spare"},
+          {0x09, "Throttled"},
+          {0x0a, "CriticalOvertemp"}}},
+        {0x0D,
+         {{0x00, "DrivePresent"},
+          {0x01, "DriveFault"},
+          {0x02, "PredictiveFailure"},
+          {0x03, "HotSpare"},
+          {0x04, "ParityCheck"},
+          {0x05, "InCriticalArray"},
+          {0x06, "InFailedArray"},
+          {0x07, "RebuildInProgress"},
+          {0x08, "RebuildAborted"}}},
+        {0x05,
+         {{0x00, "GenChassisIntrusion"},
+          {0x01, "DriveBayIntrusion"},
+          {0x02, "IOCardAreaIntrusion"},
+          {0x03, "ProcessorAreaIntrusion"},
+          {0x04, "LanLost"},
+          {0x05, "UnauthorizedDock"},
+          {0x06, "FanAreaIntrusion"}}},
+        {0x07,
+         {{0x00, "Ierr"},
+          {0x01, "ThermalTrip"},
+          {0x02, "Frb1"},
+          {0x03, "Frb2"},
+          {0x04, "Frb3"},
+          {0x05, "ConfigurationError"},
+          {0x06, "UncorrectableCpuComplexError"},
+          {0x07, "ProcessorPresenceDetected"},
+          {0x08, "ProcessorDisabled"},
+          {0x09, "TerminatorPresenceDetected"},
+          {0x0a, "ProcessorAutomaticallyThrottled"},
+          {0x0b, "MachineCheckException"},
+          {0x0c, "CorrectableMachineCheck"}}},
+        {0x10,
+         {{0x00, "Correctablememoryerror"},
+          {0x01, "Eventloggingdisabled"},
+          {0x02, "Logareareset"},
+          {0x03, "Alleventloggingdisabled"},
+          {0x04, "Logfull"},
+          {0x05, "Logalmostfull"}}},
+        {0x22,
+         {{0x00, "S0_G0"},
+          {0x01, "S1"},
+          {0x02, "S2"},
+          {0x03, "S3"},
+          {0x04, "S4"},
+          {0x05, "S5_G2"},
+          {0x06, "S4_S5"},
+          {0x07, "G3"},
+          {0x08, "S1_S2_S3"},
+          {0x09, "G1"},
+          {0x0a, "S5"},
+          {0x0b, "LegacyOn"},
+          {0x0c, "LegacyOff"},
+          {0x0e, "ACPI_Unknown"}}},
+        {0x23,
+         {{0x00, "Timerexpired"},
+          {0x01, "Hardreset"},
+          {0x02, "Powerdown"},
+          {0x03, "Powercycle"},
+          {0x08, "Timerinterrupt"}}}};
 
 const std::map<std::uint8_t, std::map<uint8_t, std::string>>
     GENERIC_EVENT_TABLE = {
@@ -243,8 +245,27 @@ static sdbusplus::bus::match::match startArmPefPostponeTimerMonitor(
         msg.read(pefTmrIface, propertiesChanged);
         std::string property = propertiesChanged.begin()->first;
         timer = std::get<uint8_t>(propertiesChanged.begin()->second);
-        if ((timer == 0x00) || (timer == 0xFE) || (timer == 0xFF))
+        if ((timer == 0x00) || (timer == 0xFF))
         {
+            return;
+        }
+        else if (timer == 0xFE)
+        {
+            try
+            {
+                auto method = conn->new_method_call(
+                    pefBus, pefPostponeTmrObj,
+                    "org.freedesktop.DBus.Properties", "Set");
+                method.append(pefPostponeCountDownIface, "TmrCountdownValue");
+                method.append(std::variant<uint8_t>(timer));
+                auto reply = conn->call(method);
+            }
+            catch (sdbusplus::exception_t& e)
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    "Failed to set TmrCountdownValue  Value",
+                    phosphor::logging::entry("EXCEPTION=%s", e.what()));
+            }
             return;
         }
 
@@ -299,8 +320,8 @@ static bool SetSensorNumber(int entry, std::string senType, std::string senName)
     uint8_t senNum = 0;
     if ((senType != "all_sensors") && (senName != "all_sensors"))
     {
-        sensorObjPath =
-            "/xyz/openbmc_project/sensors/" + senType + "/" + senName;
+        sensorObjPath = "/xyz/openbmc_project/sensors/" + senType + "/" +
+                        senName;
         senNum = getSensorNumberFromPath(sensorObjPath.c_str());
         if (senNum == 0xFF)
         {
