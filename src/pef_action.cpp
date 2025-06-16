@@ -8,17 +8,77 @@
 #include "pef_action.hpp"
 
 #include "pef_config_update.hpp"
-#include <sys/socket.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include <snmp.hpp>
 #include <snmp_notification.hpp>
+
 #include <string>
 
-std::string getCurrentTime() {
+static void toHexStr(const std::vector<uint8_t>& data, std::string& hexStr)
+{
+    std::stringstream stream;
+    stream << std::hex << std::uppercase << std::setfill('0');
+    for (int v : data)
+    {
+        stream << std::setw(2) << v;
+    }
+    hexStr = stream.str();
+}
+
+static void PEFActionSELLOG(uint8_t Action)
+{
+    auto bus = sdbusplus::bus::new_default();
+
+    // Define the SEL entry details
+    std::string message = "SEL Entry For Pef Action";
+    std::string selDataStr;
+    std::vector<uint8_t> selData = {0xC4, Action, 0xFF};
+    toHexStr(selData, selDataStr);
+    std::map<std::string, std::string> addData;
+    addData["SENSOR_PATH"] = "";
+    addData["GENERATOR_ID"] = std::to_string(0x0020);
+    addData["RECORD_TYPE"] = std::to_string(0x02); // System Event Record
+    addData["EVENT_DIR"] = std::to_string(0x1);    // Assert
+    addData["SENSOR_TYPE"] = std::to_string(0x12); // SYSTEM EVENT Sensor Type
+    addData["SENSOR_DATA"] = selDataStr;
+    addData["EVENT_TYPE"] = std::to_string(0x6F);  // Sensor Specific Event Type
+
+    auto method = bus.new_method_call(
+        "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+        "xyz.openbmc_project.Logging.Create", "Create");
+
+    // Append the parameters to the method call
+    std::string journalMsg(
+        message + ": " + " RecordType=" + std::to_string(02) +
+        ", GeneratorID=" + std::to_string(0x2000) +
+        ", EventDir=" + std::to_string(0x6F) + ", EventData=" + selDataStr);
+
+    method.append(journalMsg,
+                  "xyz.openbmc_project.Logging.Entry.Level.Informational",
+                  addData);
+
+    // Send the method call
+    try
+    {
+        bus.call(method);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to add PEF Action SEL entry:",
+            phosphor::logging::entry("EXCEPTION=%s", e.what()));
+    }
+}
+
+std::string getCurrentTime()
+{
     std::time_t currentTime = std::time(nullptr);
-    struct tm *timeInfo = std::localtime(&currentTime);
+    struct tm* timeInfo = std::localtime(&currentTime);
 
     char buffer[80];
     std::strftime(buffer, sizeof(buffer), "%a %b %d %H:%M:%S %Z %Y", timeInfo);
@@ -26,27 +86,32 @@ std::string getCurrentTime() {
     return buffer;
 }
 
-std::string getIPAddress() {
-    struct ifaddrs *ifAddrStruct = nullptr;
-    struct ifaddrs *ifa = nullptr;
-    void *addrPtr = nullptr;
+std::string getIPAddress()
+{
+    struct ifaddrs* ifAddrStruct = nullptr;
+    struct ifaddrs* ifa = nullptr;
+    void* addrPtr = nullptr;
     std::string ipAddress;
 
     getifaddrs(&ifAddrStruct);
 
-    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
-        if ((ifa->ifa_addr != nullptr ) && (ifa->ifa_addr->sa_family == AF_INET)) {
-            addrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next)
+    {
+        if ((ifa->ifa_addr != nullptr) && (ifa->ifa_addr->sa_family == AF_INET))
+        {
+            addrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
             char buffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, addrPtr, buffer, sizeof(buffer));
-            if (std::strcmp(ifa->ifa_name, "lo") != 0) { 
+            if (std::strcmp(ifa->ifa_name, "lo") != 0)
+            {
                 ipAddress = buffer;
                 break;
             }
         }
     }
 
-    if (ifAddrStruct != nullptr) {
+    if (ifAddrStruct != nullptr)
+    {
         freeifaddrs(ifAddrStruct);
     }
 
@@ -194,21 +259,37 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
         uint8_t eventType = (eventMsg->eventType & EVENT_TYPE);
         if (eventType == static_cast<uint8_t>(EventTypeCode::threshold))
         {
-            eventDataMsg = THRESHOLD_EVENT_TABLE.find(eventData)->second;
+            auto offset = THRESHOLD_EVENT_TABLE.find(eventData);
+            if (offset != THRESHOLD_EVENT_TABLE.end())
+                eventDataMsg = offset->second;
         }
         else if (eventType == static_cast<uint8_t>(EventTypeCode::generic))
         {
-            auto offset =
-                GENERIC_EVENT_TABLE.find(eventMsg->sensorType)->second;
-            eventDataMsg = offset.find(eventData)->second;
+            auto genericoffset = GENERIC_EVENT_TABLE.find(eventMsg->sensorType);
+            if (genericoffset != GENERIC_EVENT_TABLE.end())
+            {
+                auto offset = genericoffset->second;
+                auto offsetsecond = offset.find(eventData);
+                if (offsetsecond != offset.end())
+                    eventDataMsg = offsetsecond->second;
+            }
         }
         else if (eventType ==
                  static_cast<uint8_t>(EventTypeCode::sensor_specific))
         {
-            auto offset =
-                SENSOR_SPECIFIC_EVENT_TABLE.find(eventMsg->sensorType)->second;
-            std::string eventStr = offset.find(eventData)->second;
-            eventDataMsg = sensorName + " " + direction + " " + eventStr;
+            auto sensoroffset =
+                SENSOR_SPECIFIC_EVENT_TABLE.find(eventMsg->sensorType);
+            if (sensoroffset != SENSOR_SPECIFIC_EVENT_TABLE.end())
+            {
+                auto offset = sensoroffset->second;
+                auto offsetsecond = offset.find(eventData);
+                if (offsetsecond != offset.end())
+                {
+                    std::string eventStr = offset.find(eventData)->second;
+                    eventDataMsg = sensorName + " " + direction + " " +
+                                   eventStr;
+                }
+            }
         }
     }
     std::string timeStamp = getCurrentTime();
@@ -217,12 +298,13 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
     std::string adddata;
     Value variant;
     auto method = conn->new_method_call(networkService, networkObjPath,
-                                            PROP_INTF, METHOD_GET);
+                                        PROP_INTF, METHOD_GET);
     method.append(networkIface, "HostName");
     auto reply = conn->call(method);
     if (reply.is_method_error())
     {
-        phosphor::logging::log<phosphor::logging::level::ERR>("Failed to get HostName method");
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to get HostName method");
     }
     reply.read(variant);
     hostName = std::get<std::string>(variant);
@@ -232,8 +314,9 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
     {
         phosphor::network::snmp::sendTrap<
             phosphor::network::snmp::OBMCErrorNotification>(
-            static_cast<uint32_t>(eventMsg->recordId), timeStamp,
-            severity, eventDataMsg, sensorName ,direction ,EventSubjectSN, adddata ,hostName);
+            static_cast<uint32_t>(eventMsg->recordId), timeStamp, severity,
+            eventDataMsg, sensorName, direction, EventSubjectSN, adddata,
+            hostName);
     }
     catch (sdbusplus::exception_t& e)
     {
@@ -286,19 +369,33 @@ static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t eveLog)
 
         if (eveType == static_cast<uint8_t>(EventTypeCode::threshold))
         {
-            eventDataMsg = THRESHOLD_EVENT_TABLE.find(evnDat)->second;
+            auto offset = THRESHOLD_EVENT_TABLE.find(evnDat);
+            if (offset != THRESHOLD_EVENT_TABLE.end())
+                eventDataMsg = offset->second;
         }
         else if (eveType == static_cast<uint8_t>(EventTypeCode::generic))
         {
-            auto offset = GENERIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
-            eventDataMsg = offset.find(evnDat)->second;
+            auto genericoffset = GENERIC_EVENT_TABLE.find(eveMsg->sensorType);
+            if (genericoffset != GENERIC_EVENT_TABLE.end())
+            {
+                auto offset = genericoffset->second;
+                auto offsetsecond = offset.find(evnDat);
+                if (offsetsecond != offset.end())
+                    eventDataMsg = offsetsecond->second;
+            }
         }
         else if (eveType ==
                  static_cast<uint8_t>(EventTypeCode::sensor_specific))
         {
-            auto offset =
-                SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType)->second;
-            eventDataMsg = offset.find(evnDat)->second;
+            auto sensoroffset =
+                SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType);
+            if (sensoroffset != SENSOR_SPECIFIC_EVENT_TABLE.end())
+            {
+                auto offset = sensoroffset->second;
+                auto offsetsecond = offset.find(evnDat);
+                if (offsetsecond != offset.end())
+                    eventDataMsg = offsetsecond->second;
+            }
         }
     }
 
@@ -392,10 +489,9 @@ static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t eveLog)
     }
     else
     {
-        alertBody += "Sensor Name : " + sensorName + "\r\n" +
-                     "Sensor Type : " + sensorType + " \r\n" +
-                     "Severity    : " + severity + "\r\n" +
-                     "Description : " + eventDataMsg;
+        alertBody += "Sensor Name : " + sensorName + "\r\n" + "Sensor Type : " +
+                     sensorType + " \r\n" + "Severity    : " + severity +
+                     "\r\n" + "Description : " + eventDataMsg;
     }
     uint16_t mailstatus = 0;
     try
@@ -546,6 +642,8 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                 ((pefcfgInfo.PEFActionGblControl & POWER_OFF_ACTION) ==
                  POWER_OFF_ACTION))
             {
+                if (pefcfgInfo.PEFControl & 0x02)
+                    PEFActionSELLOG(POWER_OFF_ACTION);
                 int rc = initiateChassisStateTransition(pwrCtlOff);
                 if (rc < 0)
                     std::cerr << "Failed to do power action\n";
@@ -559,14 +657,37 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                       ((pefcfgInfo.PEFActionGblControl & RESET_ACTION) ==
                        RESET_ACTION)))
             {
+                if (pefcfgInfo.PEFControl & 0x02)
+                {
+                    if (((eveFltTblEntry.EvtFilterAction &
+                          POWER_CYCLE_ACTION) == POWER_CYCLE_ACTION) &&
+                        ((pefcfgInfo.PEFActionGblControl &
+                          POWER_CYCLE_ACTION) == POWER_CYCLE_ACTION))
+                    {
+                        PEFActionSELLOG(POWER_CYCLE_ACTION);
+                    }
+                    else if (((eveFltTblEntry.EvtFilterAction & RESET_ACTION) ==
+                              RESET_ACTION) &&
+                             ((pefcfgInfo.PEFActionGblControl & RESET_ACTION) ==
+                              RESET_ACTION))
+                    {
+                        PEFActionSELLOG(RESET_ACTION);
+                    }
+                }
                 bool power = getPowerStatus();
                 if (power == true)
                 {
-                    initiateStateTransition(pwrStateReset);
+                    int rc = initiateStateTransition(pwrStateReset);
+                    if (rc < 0)
+                    {
+                        phosphor::logging::log<phosphor::logging::level::ERR>(
+                            "Failed to do power action");
+                    }
                 }
                 else
                 {
-                    std::cerr << "Failed to do power action\n";
+                    phosphor::logging::log<phosphor::logging::level::ERR>(
+                        "Failed to do power action");
                 }
             }
         }
@@ -654,40 +775,43 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                         }
                         if (pefDestInfo.DestinationType == 1)
                         {
-                                alertStatus = sendSmtpAlert(
-                                     eveMsg, pefcfgInfo.PEFControl);
+                            if (pefcfgInfo.PEFControl & 0x02)
+                                PEFActionSELLOG(ALERT_ACTION);
+                            alertStatus =
+                                sendSmtpAlert(eveMsg, pefcfgInfo.PEFControl);
 
-                                if (alertStatus == 0)
+                            if (alertStatus == 0)
+                            {
+                                phosphor::logging::log<
+                                    phosphor::logging::level::INFO>(
+                                    "Alert Send Sucessfully!!!");
+                                try
+                                {
+                                    auto method = conn->new_method_call(
+                                        pefBus, pefObj,
+                                        "org.freedesktop.DBus.Properties",
+                                        "Set");
+                                    method.append(pefConfInfoIntf,
+                                                  "LastBMCProcessedEventID");
+                                    method.append(std::variant<uint16_t>(
+                                        eveMsg->recordId));
+                                    auto reply = conn->call(method);
+                                }
+                                catch (std::exception& e)
                                 {
                                     phosphor::logging::log<
-                                        phosphor::logging::level::INFO>(
-                                        "Alert Send Sucessfully!!!");
-                                    try
-                                    {
-                                        auto method = conn->new_method_call(
-                                            pefBus, pefObj,
-                                            "org.freedesktop.DBus.Properties",
-                                            "Set");
-                                        method.append(
-                                            pefConfInfoIntf,
-                                            "LastBMCProcessedEventID");
-                                        method.append(std::variant<uint16_t>(
-                                            eveMsg->recordId));
-                                        auto reply = conn->call(method);
-                                    }
-                                    catch (std::exception& e)
-                                    {
-                                        phosphor::logging::log<
-                                            phosphor::logging::level::ERR>(
-                                            "Failed to set "
-                                            "LastBMCProcessedEventID",
-                                            phosphor::logging::entry(
-                                                "EXCEPTION=%s", e.what()));
-                                    }
+                                        phosphor::logging::level::ERR>(
+                                        "Failed to set "
+                                        "LastBMCProcessedEventID",
+                                        phosphor::logging::entry("EXCEPTION=%s",
+                                                                 e.what()));
                                 }
+                            }
                         }
                         else if (pefDestInfo.DestinationType == 0)
                         {
+                            if (pefcfgInfo.PEFControl & 0x02)
+                                PEFActionSELLOG(ALERT_ACTION);
                             alertStatus = sendSNMPAlert(eveMsg);
                             if (alertStatus == 0)
                             {
@@ -947,7 +1071,7 @@ static void pefTask(const uint16_t& recId, const uint8_t& senType,
     }
 
     if ((pefPostponeTimer == 0xFE) ||
-        ((pefPostponeTimer != 0x00) && (pefPostponeTimer = !0xFF)))
+        ((pefPostponeTimer != 0x00) && (pefPostponeTimer != 0xFF)))
     {
         phosphor::logging::log<phosphor::logging::level::ERR>(
             "PEF Task is Disabled by Postpone Timer");
@@ -967,37 +1091,47 @@ static void pefTask(const uint16_t& recId, const uint8_t& senType,
 
 int main()
 {
-    conn->request_name(pefEventFilteringBus);
+    try
+    {
+        conn->request_name(pefEventFilteringBus);
 
-    auto server = sdbusplus::asio::object_server(conn);
+        auto server = sdbusplus::asio::object_server(conn);
 
-    std::shared_ptr<sdbusplus::asio::dbus_interface> pefTaskIface =
-        server.add_interface(pefEventFilteringObj, pefTaskIntf);
+        std::shared_ptr<sdbusplus::asio::dbus_interface> pefTaskIface =
+            server.add_interface(pefEventFilteringObj, pefTaskIntf);
 
-    // Register doPefTask method
-    pefTaskIface->register_method("doPefTask", pefTask);
-    pefTaskIface->initialize();
+        // Register doPefTask method
+        pefTaskIface->register_method("doPefTask", pefTask);
+        pefTaskIface->initialize();
 
-    // Reguster getSensorNum and GetSensorName  method
-    std::shared_ptr<sdbusplus::asio::dbus_interface> pefSetSensorIface =
-        server.add_interface(pefSetSensorObj, pefSetSensorIntf);
+        // Reguster getSensorNum and GetSensorName  method
+        std::shared_ptr<sdbusplus::asio::dbus_interface> pefSetSensorIface =
+            server.add_interface(pefSetSensorObj, pefSetSensorIntf);
 
-    pefSetSensorIface->register_method("SetSensorNumber", SetSensorNumber);
+        pefSetSensorIface->register_method("SetSensorNumber", SetSensorNumber);
 
-    pefSetSensorIface->register_method("GetSensorName", GetSensorName);
-    pefSetSensorIface->register_method("GetFilterEnable", GetFilterEnable);
-    pefSetSensorIface->register_method("SetFilterEnable", SetFilterEnable);
-    pefSetSensorIface->initialize();
+        pefSetSensorIface->register_method("GetSensorName", GetSensorName);
+        pefSetSensorIface->register_method("GetFilterEnable", GetFilterEnable);
+        pefSetSensorIface->register_method("SetFilterEnable", SetFilterEnable);
+        pefSetSensorIface->initialize();
 
-    sdbusplus::bus::match::match EventFilterTableMonitor =
-        startEventFilterTableMonitor(conn);
-    sdbusplus::bus::match::match AlertPolicyTableMonitor =
-        startAlertPolicyTableMonitor(conn);
-    sdbusplus::bus::match::match PefConfInfoMonitor =
-        startPefConfInfoMonitor(conn);
-    sdbusplus::bus::match::match ArmPefPostponeTimerMonitor =
-        startArmPefPostponeTimerMonitor(conn);
+        sdbusplus::bus::match::match EventFilterTableMonitor =
+            startEventFilterTableMonitor(conn);
+        sdbusplus::bus::match::match AlertPolicyTableMonitor =
+            startAlertPolicyTableMonitor(conn);
+        sdbusplus::bus::match::match PefConfInfoMonitor =
+            startPefConfInfoMonitor(conn);
+        sdbusplus::bus::match::match ArmPefPostponeTimerMonitor =
+            startArmPefPostponeTimerMonitor(conn);
 
-    io.run();
-    return 0;
+        io.run();
+        return 0;
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Standard Exception Occured",
+            phosphor::logging::entry("EXCEPTION=%s", e.what()));
+        return EXIT_FAILURE;
+    }
 }
