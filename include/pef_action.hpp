@@ -138,6 +138,8 @@ static bool getPowerStatus();
 
 static bool checkSampleEvent(struct EventMsgData* eveMsgData);
 
+static void PEFActionSELLOG(uint8_t Action);
+
 enum class EventTypeCode : uint8_t
 {
     threshold = 0x1,
