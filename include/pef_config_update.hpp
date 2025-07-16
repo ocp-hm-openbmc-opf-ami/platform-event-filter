@@ -263,3 +263,68 @@ static sdbusplus::bus::match::match
         std::move(PefConfInfoMatcherCallback));
     return PefConfInfoEntryMatcher;
 }
+
+static sdbusplus::bus::match::match startDestinationSelectorMonitor(
+    std::shared_ptr<sdbusplus::asio::connection> conn)
+{
+    auto destinationSelectorCallback = [conn](sdbusplus::message::message& msg) {
+        std::string interface;
+        boost::container::flat_map<std::string, std::variant<uint8_t, uint16_t>> propertiesChanged;
+	try{
+	msg.read(interface, propertiesChanged);
+	}
+	catch (const std::exception& e){
+		std::cerr << "Failed to read DBus message: " << e.what() << "\n";
+		return;
+	}
+
+        std::string objPath = msg.get_path();
+        int entryVal = findEntryNo(objPath.c_str());
+
+        try
+        {
+            Json data = parseJsonData(pefConfigFile);
+            auto& dstSelectorTable = data["DestinationSelector"];
+
+            for (const auto& [property, variantVal] : propertiesChanged)
+            {
+                for (auto& entry : dstSelectorTable)
+                {
+                    int entryNumber = entry["LanDestination"];
+                    if (entryNumber == entryVal)
+                    {
+                        if (std::holds_alternative<uint8_t>(variantVal))
+                        {
+                            entry[property] = std::get<uint8_t>(variantVal);
+                        }
+                        else if (std::holds_alternative<uint16_t>(variantVal))
+                        {
+                            entry[property] = std::get<uint16_t>(variantVal);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            updateJsonFile(data);
+        }
+        catch (nlohmann::json::exception& e)
+        {
+            std::cerr << "Error parsing config file";
+            return;
+        }
+        catch (std::out_of_range& e)
+        {
+            std::cerr << "Error invalid type";
+            return;
+        }
+    };
+
+    sdbusplus::bus::match::match destinationSelectorMatcher(
+        static_cast<sdbusplus::bus::bus&>(*conn),
+        "type='signal',interface='org.freedesktop.DBus.Properties',"
+        "member='PropertiesChanged',arg0namespace='xyz.openbmc_project.pef.DestinationSelectorTable'",
+        std::move(destinationSelectorCallback));
+
+    return destinationSelectorMatcher;
+}
