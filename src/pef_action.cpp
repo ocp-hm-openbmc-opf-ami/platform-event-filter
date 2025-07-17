@@ -259,33 +259,32 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
         uint8_t eventType = (eventMsg->eventType & EVENT_TYPE);
         if (eventType == static_cast<uint8_t>(EventTypeCode::threshold))
         {
-            auto offset = THRESHOLD_EVENT_TABLE.find(eventData);
-            if (offset != THRESHOLD_EVENT_TABLE.end())
-                eventDataMsg = offset->second;
+            auto it = THRESHOLD_EVENT_TABLE.find(eventData);
+            if (it != THRESHOLD_EVENT_TABLE.end())
+                eventDataMsg = it->second;
         }
         else if (eventType == static_cast<uint8_t>(EventTypeCode::generic))
         {
-            auto genericoffset = GENERIC_EVENT_TABLE.find(eventMsg->sensorType);
-            if (genericoffset != GENERIC_EVENT_TABLE.end())
+            auto it = GENERIC_EVENT_TABLE.find(eventMsg->sensorType);
+            if (it != GENERIC_EVENT_TABLE.end())
             {
-                auto offset = genericoffset->second;
-                auto offsetsecond = offset.find(eventData);
-                if (offsetsecond != offset.end())
-                    eventDataMsg = offsetsecond->second;
+                const auto& offset = it->second;
+                auto eventIt = offset.find(eventData);
+                if (eventIt != offset.end())
+                    eventDataMsg = eventIt->second;
             }
         }
         else if (eventType ==
                  static_cast<uint8_t>(EventTypeCode::sensor_specific))
         {
-            auto sensoroffset =
-                SENSOR_SPECIFIC_EVENT_TABLE.find(eventMsg->sensorType);
-            if (sensoroffset != SENSOR_SPECIFIC_EVENT_TABLE.end())
+            auto it = SENSOR_SPECIFIC_EVENT_TABLE.find(eventMsg->sensorType);
+            if (it != SENSOR_SPECIFIC_EVENT_TABLE.end())
             {
-                auto offset = sensoroffset->second;
-                auto offsetsecond = offset.find(eventData);
-                if (offsetsecond != offset.end())
+                const auto& offset = it->second;
+                auto eventIt = offset.find(eventData);
+                if (eventIt != offset.end())
                 {
-                    std::string eventStr = offset.find(eventData)->second;
+                    std::string eventStr = eventIt->second;
                     eventDataMsg = sensorName + " " + direction + " " +
                                    eventStr;
                 }
@@ -322,6 +321,7 @@ static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg)
     {
         phosphor::logging::log<phosphor::logging::level::ERR>(
             "Failed to send SNMP Trap");
+        return -1;
     }
 
     return 0;
@@ -369,32 +369,31 @@ static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t eveLog)
 
         if (eveType == static_cast<uint8_t>(EventTypeCode::threshold))
         {
-            auto offset = THRESHOLD_EVENT_TABLE.find(evnDat);
-            if (offset != THRESHOLD_EVENT_TABLE.end())
-                eventDataMsg = offset->second;
+            auto it = THRESHOLD_EVENT_TABLE.find(evnDat);
+            if (it != THRESHOLD_EVENT_TABLE.end())
+                eventDataMsg = it->second;
         }
         else if (eveType == static_cast<uint8_t>(EventTypeCode::generic))
         {
-            auto genericoffset = GENERIC_EVENT_TABLE.find(eveMsg->sensorType);
-            if (genericoffset != GENERIC_EVENT_TABLE.end())
+            auto it = GENERIC_EVENT_TABLE.find(eveMsg->sensorType);
+            if (it != GENERIC_EVENT_TABLE.end())
             {
-                auto offset = genericoffset->second;
-                auto offsetsecond = offset.find(evnDat);
-                if (offsetsecond != offset.end())
-                    eventDataMsg = offsetsecond->second;
+                const auto& offset = it->second;
+                auto eventIt = offset.find(evnDat);
+                if (eventIt != offset.end())
+                    eventDataMsg = eventIt->second;
             }
         }
         else if (eveType ==
                  static_cast<uint8_t>(EventTypeCode::sensor_specific))
         {
-            auto sensoroffset =
-                SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType);
-            if (sensoroffset != SENSOR_SPECIFIC_EVENT_TABLE.end())
+            auto it = SENSOR_SPECIFIC_EVENT_TABLE.find(eveMsg->sensorType);
+            if (it != SENSOR_SPECIFIC_EVENT_TABLE.end())
             {
-                auto offset = sensoroffset->second;
-                auto offsetsecond = offset.find(evnDat);
-                if (offsetsecond != offset.end())
-                    eventDataMsg = offsetsecond->second;
+                const auto& offset = it->second;
+                auto eventIt = offset.find(evnDat);
+                if (eventIt != offset.end())
+                    eventDataMsg = eventIt->second;
             }
         }
     }
@@ -773,7 +772,8 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                                 phosphor::logging::entry("EXCEPTION=%s",
                                                          e.what()));
                         }
-                        if (pefDestInfo.DestinationType == 1)
+                        if (pefDestInfo.DestinationType == 1 ||
+                            pefDestInfo.DestinationType == 2)
                         {
                             if (pefcfgInfo.PEFControl & 0x02)
                                 PEFActionSELLOG(ALERT_ACTION);
@@ -808,7 +808,8 @@ static void performPefAction(std::vector<std::string>& matEveFltEntries,
                                 }
                             }
                         }
-                        else if (pefDestInfo.DestinationType == 0)
+                        if (pefDestInfo.DestinationType == 0 ||
+                            pefDestInfo.DestinationType == 2)
                         {
                             if (pefcfgInfo.PEFControl & 0x02)
                                 PEFActionSELLOG(ALERT_ACTION);
@@ -1123,15 +1124,20 @@ int main()
             startPefConfInfoMonitor(conn);
         sdbusplus::bus::match::match ArmPefPostponeTimerMonitor =
             startArmPefPostponeTimerMonitor(conn);
+        sdbusplus::bus::match::match DestinationSelectorMonitor =
+            startDestinationSelectorMonitor(conn);
 
         io.run();
         return 0;
     }
-    catch (const std::exception& e)
+    catch (const sdbusplus::exception::SdBusError& e)
     {
-        phosphor::logging::log<phosphor::logging::level::ERR>(
-            "Standard Exception Occured",
-            phosphor::logging::entry("EXCEPTION=%s", e.what()));
-        return EXIT_FAILURE;
+        std::cerr << "D-Bus error: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (const boost::system::system_error& e)
+    {
+        std::cerr << "Boost system error: " << e.what() << std::endl;
+        return 1;
     }
 }
