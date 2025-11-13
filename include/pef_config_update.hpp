@@ -1,7 +1,8 @@
 #pragma once
+#include <nlohmann/json.hpp>
+
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
 
 using Json = nlohmann::json;
 
@@ -177,8 +178,8 @@ static sdbusplus::bus::match::match startAlertPolicyTableMonitor(
     return AlertPolicyEntryMatcher;
 }
 
-static sdbusplus::bus::match::match
-    startPefConfInfoMonitor(std::shared_ptr<sdbusplus::asio::connection> conn)
+static sdbusplus::bus::match::match startPefConfInfoMonitor(
+    std::shared_ptr<sdbusplus::asio::connection> conn)
 {
     auto PefConfInfoMatcherCallback = [conn](sdbusplus::message::message& msg) {
         std::string pefConfIface;
@@ -198,7 +199,7 @@ static sdbusplus::bus::match::match
         {
             selId = std::get<uint16_t>(propertiesChanged.begin()->second);
         }
-       
+
         else if (property == "Subject")
         {
             subject = std::get<std::string>(propertiesChanged.begin()->second);
@@ -225,7 +226,7 @@ static sdbusplus::bus::match::match
                 {
                     value[property] = static_cast<uint16_t>(selId);
                 }
-               
+
                 else if (property == "Subject")
                 {
                     value[property] = static_cast<std::string>(subject);
@@ -267,16 +268,20 @@ static sdbusplus::bus::match::match
 static sdbusplus::bus::match::match startDestinationSelectorMonitor(
     std::shared_ptr<sdbusplus::asio::connection> conn)
 {
-    auto destinationSelectorCallback = [conn](sdbusplus::message::message& msg) {
+    auto destinationSelectorCallback = [conn](
+                                           sdbusplus::message::message& msg) {
         std::string interface;
-        boost::container::flat_map<std::string, std::variant<uint8_t, uint16_t>> propertiesChanged;
-	try{
-	msg.read(interface, propertiesChanged);
-	}
-	catch (const std::exception& e){
-		std::cerr << "Failed to read DBus message: " << e.what() << "\n";
-		return;
-	}
+        boost::container::flat_map<std::string, std::variant<uint8_t, uint16_t>>
+            propertiesChanged;
+        try
+        {
+            msg.read(interface, propertiesChanged);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Failed to read DBus message: " << e.what() << "\n";
+            return;
+        }
 
         std::string objPath = msg.get_path();
         int entryVal = findEntryNo(objPath.c_str());
