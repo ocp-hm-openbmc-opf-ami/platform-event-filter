@@ -1,9 +1,10 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/bimap.hpp>
 #include <boost/container/flat_map.hpp>
-#include <cstring>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus/match.hpp>
+
+#include <cstring>
 
 #pragma once
 
@@ -183,21 +184,22 @@ enum class SensorTypeCodes : uint8_t
 };
 
 const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
-    sensorTypes{{{"temperature", SensorTypeCodes::temperature},
-                 {"voltage", SensorTypeCodes::voltage},
-                 {"current", SensorTypeCodes::current},
-                 {"fan_tach", SensorTypeCodes::fan},
-                 {"fan_pwm", SensorTypeCodes::fan},
-                 {"cpu", SensorTypeCodes::processor},
-                 {"powersupply", SensorTypeCodes::powersupply},
-                 {"powerunit", SensorTypeCodes::powerunit},
-                 {"system_event", SensorTypeCodes::systemEvent},
-                 {"os_boot_status", SensorTypeCodes::osBootStatus},
-                 {"os", SensorTypeCodes::os},
-                 {"acpisystem", SensorTypeCodes::acpisystem},
-                 {"watchdog", SensorTypeCodes::watchdog2},
-                 {"battery", SensorTypeCodes::battery},
-                 {"power", SensorTypeCodes::other}}};
+    sensorTypes{
+        {{"temperature", SensorTypeCodes::temperature},
+         {"voltage", SensorTypeCodes::voltage},
+         {"current", SensorTypeCodes::current},
+         {"fan_tach", SensorTypeCodes::fan},
+         {"fan_pwm", SensorTypeCodes::fan},
+         {"cpu", SensorTypeCodes::processor},
+         {"powersupply", SensorTypeCodes::powersupply},
+         {"powerunit", SensorTypeCodes::powerunit},
+         {"system_event", SensorTypeCodes::systemEvent},
+         {"os_boot_status", SensorTypeCodes::osBootStatus},
+         {"os", SensorTypeCodes::os},
+         {"acpisystem", SensorTypeCodes::acpisystem},
+         {"watchdog", SensorTypeCodes::watchdog2},
+         {"battery", SensorTypeCodes::battery},
+         {"power", SensorTypeCodes::other}}};
 
 inline static std::string getSensorTypeStringFromPath(const std::string& path)
 {

@@ -1,9 +1,10 @@
 #pragma once
 #include <boost/asio/io_service.hpp>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/message.hpp>
+
+#include <iostream>
 
 using Json = nlohmann::json;
 

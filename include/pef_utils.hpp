@@ -1,8 +1,9 @@
 #pragma once
-#include <iostream>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
+
+#include <iostream>
 
 constexpr auto PROP_INTF = "org.freedesktop.DBus.Properties";
 constexpr auto METHOD_GET = "Get";

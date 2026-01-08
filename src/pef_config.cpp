@@ -7,9 +7,10 @@
 
 #include "pef_config.hpp"
 
+#include <phosphor-logging/log.hpp>
+
 #include <filesystem>
 #include <fstream>
-#include <phosphor-logging/log.hpp>
 #include <string>
 
 Json parseJSONConfig(const std::string& configFile)
@@ -40,9 +41,8 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
         {
             std::shared_ptr<sdbusplus::asio::dbus_interface> pefConfInfoIface =
                 objectServer.add_interface(pefObj, pefConfInfoIntf);
-	    pefConfInfoIface->register_property(
-                "Version",
-                static_cast<uint8_t>(pefConfData["Version"]),
+            pefConfInfoIface->register_property(
+                "Version", static_cast<uint8_t>(pefConfData["Version"]),
                 sdbusplus::asio::PropertyPermission::readWrite);
             pefConfInfoIface->register_property(
                 "ActionSupported",
@@ -75,7 +75,7 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
                 "LastSWProcessedEventID",
                 static_cast<uint16_t>(pefConfData["LastSWProcessedEventID"]),
                 sdbusplus::asio::PropertyPermission::readWrite);
-         
+
             pefConfInfoIface->register_property(
                 "Subject", static_cast<std::string>(pefConfData["Subject"]),
                 sdbusplus::asio::PropertyPermission::readWrite);
@@ -400,8 +400,8 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
         {
             int lanDestEntry = 0;
             lanDestEntry = destSelTable["LanDestination"];
-            std::string destStrObjName = destStringTableObj +
-                                         std::to_string(lanDestEntry);
+            std::string destStrObjName =
+                destStringTableObj + std::to_string(lanDestEntry);
             std::shared_ptr<sdbusplus::asio::dbus_interface> destSelIface =
                 objectServer.add_interface(destStrObjName, destStringTableIntf);
             destSelIface->register_property(

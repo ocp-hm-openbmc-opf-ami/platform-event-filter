@@ -328,7 +328,8 @@ static sdbusplus::bus::match::match startDestinationSelectorMonitor(
     sdbusplus::bus::match::match destinationSelectorMatcher(
         static_cast<sdbusplus::bus::bus&>(*conn),
         "type='signal',interface='org.freedesktop.DBus.Properties',"
-        "member='PropertiesChanged',arg0namespace='xyz.openbmc_project.pef.DestinationSelectorTable'",
+        "member='PropertiesChanged',arg0namespace='xyz.openbmc_project.pef."
+        "DestinationSelectorTable'",
         std::move(destinationSelectorCallback));
 
     return destinationSelectorMatcher;
