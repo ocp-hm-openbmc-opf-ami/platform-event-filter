@@ -23,6 +23,12 @@ using SensorSubTree = boost::container::flat_map<
 
 using SensorNumMap = boost::bimap<int, std::string>;
 
+static constexpr uint16_t maxSensorsPerLUN = 255;
+static constexpr uint16_t maxIPMISensors = (maxSensorsPerLUN * 3);
+static constexpr uint16_t lun1Sensor0 = 0x100;
+static constexpr uint16_t lun3Sensor0 = 0x300;
+static constexpr uint16_t invalidSensorNumber = 0xFFFF;
+
 namespace details
 {
 inline static void filterSensors(SensorSubTree& subtree)
@@ -46,9 +52,10 @@ inline static void filterSensors(SensorSubTree& subtree)
         subtree.end());
 }
 
-inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
+inline static uint16_t getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
 {
     static std::shared_ptr<SensorSubTree> sensorTreePtr;
+    static uint16_t sensorUpdatedIndex = 0;
     sd_bus* bus = NULL;
     int ret = sd_bus_default_system(&bus);
     if (ret < 0)
@@ -57,7 +64,7 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
             "Failed to connect to system bus",
             phosphor::logging::entry("ERRNO=0x%X", -ret));
         sd_bus_unref(bus);
-        return false;
+        return sensorUpdatedIndex;
     }
     sdbusplus::bus::bus dbus(bus);
     static sdbusplus::bus::match::match sensorAdded(
@@ -72,11 +79,10 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
         "openbmc_project/sensors/'",
         [](sdbusplus::message::message& m) { sensorTreePtr.reset(); });
 
-    bool sensorTreeUpdated = false;
     if (sensorTreePtr)
     {
         subtree = sensorTreePtr;
-        return sensorTreeUpdated;
+        return sensorUpdatedIndex;
     }
 
     sensorTreePtr = std::make_shared<SensorSubTree>();
@@ -86,13 +92,15 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
                              "/xyz/openbmc_project/object_mapper",
                              "xyz.openbmc_project.ObjectMapper", "GetSubTree");
     static constexpr const auto depth = 2;
-    static constexpr std::array<const char*, 6> interfaces = {
+    static constexpr std::array<const char*, 8> interfaces = {
         "xyz.openbmc_project.Sensor.Value",
         "xyz.openbmc_project.Inventory.Item.Cpu",
         "xyz.openbmc_project.Inventory.Item.Watchdog",
         "xyz.openbmc_project.Sensor.State",
+        "xyz.openbmc_project.Sensor.EventOnly",
         "xyz.openbmc_project.Sensor.Threshold.Warning",
-        "xyz.openbmc_project.Sensor.Threshold.Critical"};
+        "xyz.openbmc_project.Sensor.Threshold.Critical",
+        "xyz.openbmc_project.Sensor.Threshold.NonRecoverable"};
     mapperCall.append("/xyz/openbmc_project/sensors", depth, interfaces);
 
     try
@@ -103,39 +111,57 @@ inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
     catch (sdbusplus::exception_t& e)
     {
         phosphor::logging::log<phosphor::logging::level::ERR>(e.what());
-        return sensorTreeUpdated;
+        return sensorUpdatedIndex;
     }
     details::filterSensors(*sensorTreePtr);
     subtree = sensorTreePtr;
-    sensorTreeUpdated = true;
-    return sensorTreeUpdated;
+    sensorUpdatedIndex++;
+    return sensorUpdatedIndex;
 }
 
 inline static bool getSensorNumMap(std::shared_ptr<SensorNumMap>& sensorNumMap)
 {
     static std::shared_ptr<SensorNumMap> sensorNumMapPtr;
     bool sensorNumMapUpated = false;
-
+    static uint16_t prevSensorUpdatedIndex = 0;
     std::shared_ptr<SensorSubTree> sensorTree;
-    bool sensorTreeUpdated = details::getSensorSubtree(sensorTree);
+    uint16_t curSensorUpdatedIndex = details::getSensorSubtree(sensorTree);
     if (!sensorTree)
     {
         return sensorNumMapUpated;
     }
 
-    if (!sensorTreeUpdated && sensorNumMapPtr)
+    if ((curSensorUpdatedIndex == prevSensorUpdatedIndex) && sensorNumMapPtr)
     {
         sensorNumMap = sensorNumMapPtr;
         return sensorNumMapUpated;
     }
+    prevSensorUpdatedIndex = curSensorUpdatedIndex;
 
     sensorNumMapPtr = std::make_shared<SensorNumMap>();
 
-    uint8_t sensorNum = 0;
+    uint16_t sensorNum = 0;
+    uint16_t sensorIndex = 0;
     for (const auto& sensor : *sensorTree)
     {
         sensorNumMapPtr->insert(
-            SensorNumMap::value_type(sensorNum++, sensor.first));
+            SensorNumMap::value_type(sensorNum, sensor.first));
+
+        sensorIndex++;
+        if (sensorIndex == maxSensorsPerLUN)
+        {
+            sensorIndex = lun1Sensor0;
+        }
+        else if (sensorIndex == (lun1Sensor0 | maxSensorsPerLUN))
+        {
+            // Skip assigning LUN 0x2 any sensors
+            sensorIndex = lun3Sensor0;
+        }
+        else if (sensorIndex == (lun3Sensor0 | maxSensorsPerLUN))
+        {
+            throw std::out_of_range("Maximum number of IPMI sensors exceeded.");
+        }
+        sensorNum = sensorIndex;
     }
     sensorNumMap = sensorNumMapPtr;
     sensorNumMapUpated = true;
