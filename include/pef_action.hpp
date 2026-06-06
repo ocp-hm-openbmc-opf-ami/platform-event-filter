@@ -1,7 +1,7 @@
 #pragma once
 #include "pef_utils.hpp"
 
-#include <boost/asio/io_service.hpp>
+//#include <boost/asio/io_service.hpp>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/message.hpp>
@@ -32,15 +32,21 @@
 #define EVENT_DIRECTION 0x80
 #define EVENT_STATE 0x0f
 
+#define MAX_ALERTS_LIMIT 100
+#define MAX_RETRY 10
+#define MAX_INTERVAL 3600 /* seconds */
+
 using namespace std::chrono;
 
-boost::asio::io_service io;
+boost::asio::io_context io;
 auto conn = std::make_shared<sdbusplus::asio::connection>(io);
 
 // static constexpr const char* pefConfigFile =
 // "/usr/share/pef-alert-manager/pef-alert-manager.json";
 static constexpr const char* pefConfigFile =
     "/var/lib/pef-alert-manager/pef-alert-manager.json";
+static constexpr const char* retryConfigFile =
+    "/var/lib/pef-alert-manager/retryConf.json";
 
 /*pef configuration*/
 static constexpr const char* pefEventFilteringBus =
@@ -58,11 +64,22 @@ static constexpr const char* pefSetSensorObj =
     "/xyz/openbmc_project/pef/alerting/SensorNumber";
 static constexpr const char* pefSetSensorIntf =
     "xyz.openbmc_project.pef.alert.SensorNumber";
+static constexpr const char* userAccPolicyIntf =
+    "xyz.openbmc_project.User.AccountPolicy";
+static constexpr const char* userManagerBus =
+    "xyz.openbmc_project.User.Manager";
+static constexpr const char* userMgrObjPath = "/xyz/openbmc_project/user";
+static constexpr const char* getMapMethod = "GetChannelInterfaceMap";
+static constexpr const char* userObjPathPrefix = "/xyz/openbmc_project/user/";
+static constexpr const char* userAttributesIface =
+    "xyz.openbmc_project.User.Attributes";
 // static constexpr const char *systemGUIDIntf =
 // "xyz.openbmc_project.pef.SystemGUID"; static constexpr const char
 // *oemParamIntf = "xyz.openbmc_project.pef.OEMParam";
 static constexpr const char* eventFilterTableObj =
     "/xyz/openbmc_project/PefAlertManager/EventFilterTable/Entry";
+static constexpr const char* eventFilterTableObjPath =
+    "/xyz/openbmc_project/PefAlertManager/EventFilterTable/List";
 static constexpr const char* eventFilterTableIntf =
     "xyz.openbmc_project.pef.EventFilterTable";
 static constexpr const char* alertPolicyTableObj =
@@ -89,6 +106,10 @@ static constexpr const char* mailService = "xyz.openbmc_project.mail";
 static constexpr const char* mailObjPath = "/xyz/openbmc_project/mail/alert";
 static constexpr const char* mailIface = "xyz.openbmc_project.mail.alert";
 static constexpr const char* sendMailMethod = "SendMail";
+/*pendtask*/
+constexpr const char* pendtaskService = "xyz.openbmc_project.Pendtask";
+constexpr const char* pendtaskPath = "/xyz/openbmc_project/Pendtask/pef";
+constexpr const char* pendtaskIface = "xyz.openbmc_project.Pendtask.pef";
 /*power status*/
 static constexpr const char* pwrService = "xyz.openbmc_project.Chassis.Buttons";
 static constexpr const char* pwrStateObjPath =
@@ -125,10 +146,11 @@ static void eventFilteringProcess(struct EventMsgData* eventMsg);
 
 static uint8_t pefEveDataMatch(uint8_t, uint8_t, uint8_t, uint8_t);
 
-static void performPefAction(std::vector<std::string>&,
+static void performPefAction(const std::vector<EvtFilterTblEntry>&,
                              struct EventMsgData* eveMsg);
 
-static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg, uint8_t);
+static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg,
+                              const std::string& smtpMailID);
 
 static int initiateChassisStateTransition(std::string);
 
@@ -479,7 +501,8 @@ static bool SetFilterEnable(std::vector<uint8_t> FilterEnable)
     return true;
 }
 
-static uint16_t sendSNMPAlert(struct EventMsgData);
+static uint16_t sendSNMPAlert(struct EventMsgData* eventMsg, uint8_t channelNo,
+                              uint8_t destinationSel);
 
 uint64_t getTimeStamp()
 {

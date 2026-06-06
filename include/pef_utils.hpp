@@ -4,6 +4,7 @@
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <iostream>
+#include <string>
 
 constexpr auto PROP_INTF = "org.freedesktop.DBus.Properties";
 constexpr auto METHOD_GET = "Get";
@@ -53,8 +54,12 @@ struct EvtFilterTblEntry
 struct AlertPolicyTbl
 {
     uint8_t AlertPolicyEntry;
-    uint8_t AlertNum;
-    uint8_t ChannelDestSel;
+    uint8_t AlertPolicyGroupNum;
+    uint8_t EnableAlert;
+    uint8_t PolicyAction;
+    uint8_t ChannelNo;
+    uint8_t DestinationSel;
+    std::string EventSpecificAlertStr;
     uint8_t AlertStingkey;
 };
 

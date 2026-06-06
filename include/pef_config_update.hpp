@@ -1,8 +1,13 @@
 #pragma once
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
 
 using Json = nlohmann::json;
 
@@ -60,49 +65,98 @@ static sdbusplus::bus::match::match startEventFilterTableMonitor(
     auto EventFilterEntryMatcherCallback = [conn](sdbusplus::message::message&
                                                       msg) {
         std::string pefConfIface;
-        uint8_t val = 0;
-        uint16_t offsetMask = 0;
-        boost::container::flat_map<std::string, std::variant<uint8_t, uint16_t>>
+        using EventFilterChangedValue =
+            std::variant<uint8_t, uint16_t, std::vector<uint8_t>,
+                         std::vector<uint16_t>>;
+        boost::container::flat_map<std::string, EventFilterChangedValue>
             propertiesChanged;
         msg.read(pefConfIface, propertiesChanged);
+        if (propertiesChanged.empty())
+        {
+            return;
+        }
+
         std::string property = propertiesChanged.begin()->first;
-        if (property != "EventData1OffsetMask")
-        {
-            val = std::get<uint8_t>(propertiesChanged.begin()->second);
-        }
-        else if (property == "EventData1OffsetMask")
-        {
-            offsetMask = std::get<uint16_t>(propertiesChanged.begin()->second);
-        }
+        const auto& changedValue = propertiesChanged.begin()->second;
         std::string objPath;
         objPath = msg.get_path();
-        int entryVal = 0;
-        entryVal = findEntryNo(objPath.c_str());
+
+        // Determine which List group changed (List1=0, List2=1, etc.)
+        std::optional<size_t> bucketIndex = std::nullopt;
+        for (size_t idx = 0; idx < 4; ++idx)
+        {
+            const std::string listName = "List" + std::to_string(idx + 1);
+            if (objPath.find(listName) != std::string::npos)
+            {
+                bucketIndex = idx;
+                break;
+            }
+        }
+
         try
         {
             Json data = parseJsonData(pefConfigFile);
             auto& eventFilterTblData = data["EventFilterTable"];
-            for (auto& value : eventFilterTblData)
+
+            if (bucketIndex.has_value() &&
+                std::holds_alternative<std::vector<uint8_t>>(changedValue))
             {
-                int eventFilterEntry = 0;
-                eventFilterEntry = value["EventFilterTableEntry"];
-                if (entryVal == eventFilterEntry)
+                const auto& values =
+                    std::get<std::vector<uint8_t>>(changedValue);
+                const size_t start = bucketIndex.value() * 10;
+                const size_t maxCount =
+                    (start < eventFilterTblData.size())
+                        ? (eventFilterTblData.size() - start)
+                        : 0;
+                const size_t count = std::min(values.size(), maxCount);
+                for (size_t i = 0; i < count; ++i)
                 {
-                    if (property == "EventData1OffsetMask")
+                    eventFilterTblData[start + i][property] =
+                        static_cast<uint8_t>(values[i]);
+                }
+            }
+            else if (bucketIndex.has_value() &&
+                     std::holds_alternative<std::vector<uint16_t>>(
+                         changedValue))
+            {
+                const auto& values =
+                    std::get<std::vector<uint16_t>>(changedValue);
+                const size_t start = bucketIndex.value() * 10;
+                const size_t maxCount =
+                    (start < eventFilterTblData.size())
+                        ? (eventFilterTblData.size() - start)
+                        : 0;
+                const size_t count = std::min(values.size(), maxCount);
+                for (size_t i = 0; i < count; ++i)
+                {
+                    eventFilterTblData[start + i][property] =
+                        static_cast<uint16_t>(values[i]);
+                }
+            }
+            else
+            {
+                // Legacy scalar fallback
+                int entryVal = findEntryNo(objPath.c_str());
+                for (auto& value : eventFilterTblData)
+                {
+                    int eventFilterEntry =
+                        value.value("EventFilterTableEntry", 0);
+                    if (entryVal == eventFilterEntry)
                     {
-                        value[property] = static_cast<uint16_t>(offsetMask);
-                        break;
-                    }
-                    else
-                    {
-                        value[property] = static_cast<uint8_t>(val);
+                        if (std::holds_alternative<uint16_t>(changedValue))
+                        {
+                            value[property] = std::get<uint16_t>(changedValue);
+                        }
+                        else if (std::holds_alternative<uint8_t>(changedValue))
+                        {
+                            value[property] = std::get<uint8_t>(changedValue);
+                        }
                         break;
                     }
                 }
             }
-            Json dat = eventFilterTblData;
-            dat.merge_patch(data);
-            updateJsonFile(dat);
+
+            updateJsonFile(data);
         }
         catch (nlohmann::json::exception& e)
         {
@@ -127,48 +181,132 @@ static sdbusplus::bus::match::match startEventFilterTableMonitor(
 static sdbusplus::bus::match::match startAlertPolicyTableMonitor(
     std::shared_ptr<sdbusplus::asio::connection> conn)
 {
-    auto AlertPolicyEntryMatcherCallback = [conn](sdbusplus::message::message&
-                                                      msg) {
-        std::string pefConfIface;
-        uint8_t val = 0;
-        boost::container::flat_map<std::string, std::variant<uint8_t, uint16_t>>
-            propertiesChanged;
-        msg.read(pefConfIface, propertiesChanged);
-        std::string property = propertiesChanged.begin()->first;
-        val = std::get<uint8_t>(propertiesChanged.begin()->second);
-        std::string objPath;
-        objPath = msg.get_path();
-        int entryVal = 0;
-        entryVal = findEntryNo(objPath.c_str());
-        try
-        {
-            Json data = parseJsonData(pefConfigFile);
-            auto& alertPolicyTblData = data["AlertPolicyTable"];
-            for (auto& value : alertPolicyTblData)
+    auto AlertPolicyEntryMatcherCallback =
+        [conn](sdbusplus::message::message& msg) {
+            std::string pefConfIface;
+            using AlertPolicyChangedValue =
+                std::variant<uint8_t, uint16_t, std::vector<uint8_t>,
+                             std::vector<std::string>>;
+            boost::container::flat_map<std::string, AlertPolicyChangedValue>
+                propertiesChanged;
+            msg.read(pefConfIface, propertiesChanged);
+            if (propertiesChanged.empty())
             {
-                int alertPolicyEntry = 0;
-                alertPolicyEntry = value["AlertPolicyTableEntry"];
-                if (entryVal == alertPolicyEntry)
+                return;
+            }
+
+            std::string property = propertiesChanged.begin()->first;
+            const auto& changedValue = propertiesChanged.begin()->second;
+            std::string objPath;
+            objPath = msg.get_path();
+
+            std::optional<size_t> bucketIndex = std::nullopt;
+            for (size_t idx = 0; idx < 4; ++idx)
+            {
+                const std::string policyListName =
+                    "PolicyList_eth" + std::to_string(idx);
+                if (objPath.find(policyListName) != std::string::npos)
                 {
-                    value[property] = static_cast<uint8_t>(val);
+                    bucketIndex = idx;
                     break;
                 }
             }
-            Json dat = alertPolicyTblData;
-            dat.merge_patch(data);
-            updateJsonFile(dat);
-        }
-        catch (nlohmann::json::exception& e)
-        {
-            std::cerr << "Error parsing config file";
-            return;
-        }
-        catch (std::out_of_range& e)
-        {
-            std::cerr << "Error invalid type";
-            return;
-        }
-    };
+
+            try
+            {
+                Json data = parseJsonData(pefConfigFile);
+                auto& alertPolicyTblData = data["AlertPolicyTable"];
+
+                if (bucketIndex.has_value() &&
+                    std::holds_alternative<std::vector<uint8_t>>(changedValue))
+                {
+                    const auto& values =
+                        std::get<std::vector<uint8_t>>(changedValue);
+                    const size_t start = bucketIndex.value() * 15;
+                    const size_t maxCount =
+                        (start < alertPolicyTblData.size())
+                            ? (alertPolicyTblData.size() - start)
+                            : 0;
+                    const size_t count = std::min(values.size(), maxCount);
+                    for (size_t idx = 0; idx < count; ++idx)
+                    {
+                        alertPolicyTblData[start + idx][property] =
+                            static_cast<uint8_t>(values[idx]);
+                    }
+                }
+                else if (bucketIndex.has_value() &&
+                         std::holds_alternative<std::vector<std::string>>(
+                             changedValue))
+                {
+                    const auto& values =
+                        std::get<std::vector<std::string>>(changedValue);
+                    const size_t start = bucketIndex.value() * 15;
+                    const size_t maxCount =
+                        (start < alertPolicyTblData.size())
+                            ? (alertPolicyTblData.size() - start)
+                            : 0;
+                    const size_t count = std::min(values.size(), maxCount);
+                    for (size_t idx = 0; idx < count; ++idx)
+                    {
+                        alertPolicyTblData[start + idx][property] =
+                            static_cast<std::string>(values[idx]);
+                    }
+                }
+                else
+                {
+                    uint8_t val = 0;
+                    if (std::holds_alternative<uint8_t>(changedValue))
+                    {
+                        val = std::get<uint8_t>(changedValue);
+                    }
+                    else if (std::holds_alternative<uint16_t>(changedValue))
+                    {
+                        val = static_cast<uint8_t>(
+                            std::get<uint16_t>(changedValue));
+                    }
+                    else
+                    {
+                        return;
+                    }
+
+                    int entryVal = 0;
+                    entryVal = findEntryNo(objPath.c_str());
+                    for (auto& value : alertPolicyTblData)
+                    {
+                        int alertPolicyEntry = 0;
+                        if (value.contains("AlertPolicyTableEntry"))
+                        {
+                            alertPolicyEntry = value["AlertPolicyTableEntry"];
+                            if (entryVal != alertPolicyEntry)
+                            {
+                                continue;
+                            }
+                        }
+                        else if (entryVal > 0)
+                        {
+                            continue;
+                        }
+
+                        value[property] = static_cast<uint8_t>(val);
+                        break;
+                    }
+                }
+
+                Json dat = alertPolicyTblData;
+                dat.merge_patch(data);
+                updateJsonFile(dat);
+            }
+            catch (nlohmann::json::exception& e)
+            {
+                std::cerr << "Error parsing config file";
+                return;
+            }
+            catch (std::out_of_range& e)
+            {
+                std::cerr << "Error invalid type";
+                return;
+            }
+        };
     sdbusplus::bus::match::match AlertPolicyEntryMatcher(
         static_cast<sdbusplus::bus::bus&>(*conn),
         "type='signal',interface='org.freedesktop.DBus.Properties',member='"
