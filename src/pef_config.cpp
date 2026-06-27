@@ -8,6 +8,7 @@
 #include "pef_config.hpp"
 
 #include "pef_debug.hpp"
+#include "pef_utils.hpp"
 #include "sdrutils.hpp"
 #include "snmp.hpp"
 #include "xyz/openbmc_project/Common/error.hpp"
@@ -160,7 +161,7 @@ std::map<std::string, uint8_t> getAvailableSensorTypes()
         auto findSensor = sensorTypes.find(type.c_str());
         if (findSensor != sensorTypes.end())
         {
-            typeMap[type] = static_cast<uint8_t>(findSensor->second);
+            typeMap[type] = static_cast<uint8_t>(findSensor->second.first);
         }
     }
 
@@ -1409,7 +1410,7 @@ void parsePefConfToDbus(std::shared_ptr<sdbusplus::asio::connection> conn,
                         bool valid = false;
                         for (const auto& [name, code] : sensorTypes)
                         {
-                            if (static_cast<uint8_t>(code) == type)
+                            if (static_cast<uint8_t>(code.first) == type)
                             {
                                 valid = true;
                                 break;

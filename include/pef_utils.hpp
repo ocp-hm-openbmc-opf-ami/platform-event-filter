@@ -78,3 +78,30 @@ struct pefDestSelector
     uint8_t LanChannel;
     uint8_t DestinationType;
 };
+
+inline static std::string retrieveSensorTypeFromPath(const std::string& path,
+                                                     uint8_t /*sensorType*/)
+{
+    // Path format: /xyz/openbmc_project/sensors/<type>/<name>
+    size_t typeEnd = path.rfind('/');
+    if (typeEnd == std::string::npos)
+    {
+        return path;
+    }
+    size_t typeStart = path.rfind('/', typeEnd - 1);
+    if (typeStart == std::string::npos)
+    {
+        return path;
+    }
+    return path.substr(typeStart + 1, typeEnd - (typeStart + 1));
+}
+
+inline static std::string getSensorNameFromPath(const std::string& path)
+{
+    size_t nameStart = path.rfind('/');
+    if (nameStart == std::string::npos)
+    {
+        return path;
+    }
+    return path.substr(nameStart + 1);
+}

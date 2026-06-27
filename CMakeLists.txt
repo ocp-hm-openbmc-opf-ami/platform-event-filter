@@ -13,6 +13,16 @@ add_definitions(-DBOOST_NO_RTTI)
 add_definitions(-DBOOST_NO_TYPEID)
 add_definitions(-DBOOST_ASIO_DISABLE_THREADS)
 
+# Enable static sensor number support if requested
+if(STATIC_SENSOR_NUMBER_ENABLE)
+    add_definitions(-DFEATURE_STATIC_SENSOR_NUMBER)
+endif()
+
+# Enable API sensor support if requested
+if(API_SENSOR_SUPPORT)
+    add_definitions(-DFEATURE_APISENSOR_SUPPORT)
+endif()
+
 set(SOURCE_FILES
     src/pef_config.cpp
     src/snmp_notification.cpp
