@@ -39,8 +39,16 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SYSTEMD libsystemd REQUIRED)
 
 # import sdbusplus
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDBUSPLUSPLUS sdbusplus REQUIRED)
+if(TESTS)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-dependencies.cmake)
+    enable_testing()
+    add_subdirectory(tests)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDBUSPLUSPLUS sdbusplus REQUIRED)
+    set(SDBUSPLUS_LIB sdbusplus)
+    set(PHOSPHOR_LOGGING_LIB phosphor_logging)
+endif()
 
 pkg_check_modules(NETSNMP REQUIRED netsnmp)
 
@@ -53,8 +61,8 @@ endif()
 
 target_link_libraries(pef-configuration systemd)
 target_link_libraries(pef-configuration boost_coroutine)
-target_link_libraries(pef-configuration sdbusplus -lstdc++fs)
-target_link_libraries(pef-configuration phosphor_logging)
+target_link_libraries(pef-configuration ${SDBUSPLUS_LIB} -lstdc++fs)
+target_link_libraries(pef-configuration ${PHOSPHOR_LOGGING_LIB})
 target_link_libraries(pef-configuration ${Boost_LIBRARIES})
 target_include_directories(pef-configuration PRIVATE
     ${NETSNMP_INCLUDE_DIRS})
@@ -68,7 +76,7 @@ target_link_libraries(pef-configuration
 
 target_link_libraries(pef-event-filtering systemd)
 target_link_libraries(pef-event-filtering boost_coroutine)
-target_link_libraries(pef-event-filtering sdbusplus -lstdc++fs)
+target_link_libraries(pef-event-filtering ${SDBUSPLUS_LIB} -lstdc++fs)
 target_link_libraries(pef-event-filtering ${Boost_LIBRARIES})
 target_include_directories(pef-event-filtering PRIVATE
     ${NETSNMP_INCLUDE_DIRS})
