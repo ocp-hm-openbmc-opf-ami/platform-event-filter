@@ -5,6 +5,7 @@
 #include "pef_debug.hpp"
 
 #include <arpa/inet.h>
+#include <grp.h>
 #include <netdb.h>
 
 #include <sdbusplus/bus.hpp>
@@ -16,6 +17,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -573,7 +575,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
     PEF_SNMP_DBG("sendTrap start");
     if (!getTrapEnabled())
     {
-        std::cerr << "SNMP trap is disabled\n";
         PEF_SNMP_DBG("sendTrap early exit: disabled");
         return false;
     }
@@ -586,6 +587,7 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
                  << eventSubjectSN << " extractedBmcIP=" << bmcIPAddress);
 
     bool trapSent = false;
+    snmp_shutdown("pef-alert-manager");
     init_snmp("pef-alert-manager");
 
     const auto snmpDisableStatus = getSNMPDisableStatus();
@@ -596,7 +598,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Failed to build SNMP manager list: " << e.what() << '\n';
         PEF_SNMP_DBG("sendTrap manager discovery exception=" << e.what());
         return false;
     }
@@ -625,6 +626,8 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
             session.community = reinterpret_cast<u_char*>(
                 const_cast<char*>(manager.community.c_str()));
             session.community_len = manager.community.length();
+            session.callback = nullptr;
+            session.callback_magic = nullptr;
         }
         else if (manager.version == "v2c")
         {
@@ -632,6 +635,8 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
             session.community = reinterpret_cast<u_char*>(
                 const_cast<char*>(manager.community.c_str()));
             session.community_len = manager.community.length();
+            session.callback = nullptr;
+            session.callback_magic = nullptr;
         }
         else if (manager.version == "v3")
         {
@@ -641,34 +646,39 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
             session.securityName = const_cast<char*>(manager.userName.c_str());
             session.securityNameLen = manager.userName.size();
 
+            struct group* gr = getgrnam("snmp");
+            bool foundUser = false;
+
+            if ((gr != nullptr) && (gr->gr_mem != nullptr))
+            {
+                int i = 0;
+                while (gr->gr_mem[i] != nullptr)
+                {
+                    if (strcmp(session.securityName, gr->gr_mem[i]) == 0)
+                    {
+                        foundUser = true;
+                        break;
+                    }
+                    i++;
+                }
+            }
+            if (foundUser == false)
+            {
+                PEF_SNMP_DBG("User not found in snmp group"
+                             << manager.userName);
+                continue;
+            }
             u_char engineId[SNMP_MAXBUF] = {0};
             size_t engineIdLen = snmpv3_get_engineID(engineId, SNMP_MAXBUF);
             session.securityEngineID = engineId;
             session.securityEngineIDLen = engineIdLen;
             session.securityLevel = SNMP_SEC_LEVEL_AUTHPRIV;
 
-            constexpr std::string_view SHA_224 = "SHA-224";
-            constexpr std::string_view SHA_256 = "SHA-256";
             constexpr std::string_view SHA_384 = "SHA-384";
             constexpr std::string_view SHA_512 = "SHA-512";
             constexpr std::string_view AES_ENCRYPTION = "AES";
-            constexpr std::string_view DES_ENCRYPTION = "DES";
 
-            if (manager.algorithm == SHA_224)
-            {
-                PEF_SNMP_DBG("SNMPv3 auth algorithm SHA-224");
-                session.securityAuthProto = usmHMAC128SHA224AuthProtocol;
-                session.securityAuthProtoLen = USM_AUTH_PROTO_SHA_LEN;
-                session.securityAuthKeyLen = USM_AUTH_KU_LEN;
-            }
-            else if (manager.algorithm == SHA_256)
-            {
-                PEF_SNMP_DBG("SNMPv3 auth algorithm SHA-256");
-                session.securityAuthProto = usmHMAC192SHA256AuthProtocol;
-                session.securityAuthProtoLen = USM_AUTH_PROTO_SHA_LEN;
-                session.securityAuthKeyLen = USM_AUTH_KU_LEN;
-            }
-            else if (manager.algorithm == SHA_384)
+            if (manager.algorithm == SHA_384)
             {
                 PEF_SNMP_DBG("SNMPv3 auth algorithm SHA-384");
                 session.securityAuthProto = usmHMAC256SHA384AuthProtocol;
@@ -701,7 +711,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
 
             if (rc != SNMPERR_SUCCESS)
             {
-                std::cerr << "Failed to generate authentication key\n";
                 PEF_SNMP_DBG("SNMPv3 auth key generation failed");
                 continue;
             }
@@ -710,16 +719,9 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
 
             if (manager.encryption == AES_ENCRYPTION)
             {
-                PEF_SNMP_DBG("SNMPv3 privacy encryption AES");
-                session.securityPrivProto = usmAES128PrivProtocol;
-                session.securityPrivProtoLen = USM_PRIV_PROTO_AES128_LEN;
-                session.securityPrivKeyLen = USM_PRIV_KU_LEN;
-            }
-            else if (manager.encryption == DES_ENCRYPTION)
-            {
-                PEF_SNMP_DBG("SNMPv3 privacy encryption DES");
-                session.securityPrivProto = usmDESPrivProtocol;
-                session.securityPrivProtoLen = USM_PRIV_PROTO_DES_LEN;
+                session.securityPrivProto = usmAES256PrivProtocol;
+                session.securityPrivProtoLen =
+                    OID_LENGTH(usmAES256PrivProtocol);
                 session.securityPrivKeyLen = USM_PRIV_KU_LEN;
             }
             else
@@ -740,7 +742,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
                              manager.password.length(), privKey, &privKeyLen);
             if (rc != SNMPERR_SUCCESS)
             {
-                std::cerr << "Failed to generate privacy key\n";
                 PEF_SNMP_DBG("SNMPv3 privacy key generation failed");
                 continue;
             }
@@ -749,31 +750,28 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
         }
         else
         {
-            std::cerr << "SNMP version not supported by local sender: "
-                      << manager.version << '\n';
             continue;
         }
 
-        netsnmp_session* rawSession = snmp_open(&session);
-        if (!rawSession)
+        // create the sessions
+        auto ss = snmp_add(
+            &session,
+            netsnmp_transport_open_client("snmptrap", session.peername),
+            nullptr, nullptr);
+        if (!ss)
         {
-            std::cerr << "Unable to open SNMP session for manager "
-                      << manager.ipaddress << '\n';
-            PEF_SNMP_DBG("snmp_open failed peer=" << manager.ipaddress);
+            PEF_SNMP_DBG("Unable to get the snmp session: {SNMPMANAGER}"
+                         << manager.ipaddress);
             continue;
         }
         PEF_SNMP_DBG("snmp_open success peer=" << manager.ipaddress);
 
-        SessionPtr sessionPtr(rawSession, &::snmp_close);
+        SessionPtr sessionPtr(ss, &::snmp_close);
 
         netsnmp_pdu* pdu = nullptr;
         if (manager.version == "v1")
         {
             pdu = snmp_pdu_create(SNMP_MSG_TRAP);
-            if (pdu)
-            {
-                pdu->trap_type = SNMP_TRAP_ENTERPRISESPECIFIC;
-            }
         }
         else
         {
@@ -782,7 +780,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
 
         if (!pdu)
         {
-            std::cerr << "Failed to create SNMP PDU\n";
             PEF_SNMP_DBG("PDU create failed peer=" << manager.ipaddress);
             continue;
         }
@@ -792,11 +789,12 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
         if (snmp_add_var(pdu, sysuptimeOID, sizeof(sysuptimeOID) / sizeof(oid),
                          't', uptimeStr.c_str()) != 0)
         {
-            std::cerr << "Failed to add sysUpTime var\n";
             PEF_SNMP_DBG("add sysUpTime failed peer=" << manager.ipaddress);
             snmp_free_pdu(pdu);
             continue;
         }
+
+        pdu->trap_type = SNMP_TRAP_ENTERPRISESPECIFIC;
 
         auto trapInfo = getTrapOID();
         if (!snmp_pdu_add_variable(pdu, SNMPTrapOID,
@@ -804,7 +802,6 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
                                    ASN_OBJECT_ID, trapInfo.first.data(),
                                    trapInfo.second * sizeof(oid)))
         {
-            std::cerr << "Failed to add snmpTrapOID var\n";
             PEF_SNMP_DBG("add snmpTrapOID failed peer=" << manager.ipaddress);
             snmp_free_pdu(pdu);
             continue;
@@ -817,6 +814,7 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
             if (!addPDUVar(*pdu, std::get<0>(object), std::get<1>(object),
                            std::get<2>(object), std::get<3>(object)))
             {
+                PEF_SNMP_DBG("Failed to add the SNMP var");
                 allFieldsAdded = false;
                 break;
             }
@@ -824,36 +822,38 @@ bool Notification::sendTrap(const std::optional<uint8_t>& channelNoFilter,
 
         if (!allFieldsAdded)
         {
-            std::cerr << "Failed to add one or more SNMP fields\n";
-            PEF_SNMP_DBG("add object fields failed peer=" << manager.ipaddress);
             snmp_free_pdu(pdu);
             continue;
         }
 
-        const int retval = snmp_send(sessionPtr.get(), pdu);
+        // pdu is freed by snmp_send
+        auto retval = snmp_send(sessionPtr.get(), pdu);
+        netsnmp_session* activeSession = sessionPtr.get();
+        if (activeSession && activeSession->securityEngineID &&
+            activeSession->securityEngineIDLen > 0 &&
+            activeSession->securityName)
+        {
+            struct usmUser* usr =
+                usm_get_user(activeSession->securityEngineID,
+                             activeSession->securityEngineIDLen,
+                             activeSession->securityName);
+            if (usr)
+            {
+                usm_remove_user(usr);
+                usm_free_user(usr);
+            }
+        }
         if (!retval)
         {
-            std::cerr << "Failed to send SNMP trap to " << manager.ipaddress
-                      << '\n';
-            PEF_SNMP_DBG("snmp_send failed peer=" << manager.ipaddress);
-            snmp_free_pdu(pdu);
             continue;
         }
-
-        PEF_SNMP_DBG("snmp_send success peer=" << manager.ipaddress);
         trapSent = true;
     }
-
-    if (!trapSent)
+    if (trapSent == false)
     {
-        std::cerr << "Failed to send SNMP trap to all managers\n";
-        PEF_SNMP_DBG("sendTrap complete: no successful destinations");
+        PEF_SNMP_DBG("Failed to send the snmp trap for all managers.");
+        return trapSent;
     }
-    else
-    {
-        PEF_SNMP_DBG("sendTrap complete: at least one destination successful");
-    }
-
     return trapSent;
 }
 
