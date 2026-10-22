@@ -1869,17 +1869,6 @@ int main()
             });
         pefTaskIface->initialize();
 
-        // Reguster getSensorNum and GetSensorName  method
-        std::shared_ptr<sdbusplus::asio::dbus_interface> pefSetSensorIface =
-            server.add_interface(pefSetSensorObj, pefSetSensorIntf);
-
-        pefSetSensorIface->register_method("SetSensorNumber", SetSensorNumber);
-
-        pefSetSensorIface->register_method("GetSensorName", GetSensorName);
-        pefSetSensorIface->register_method("GetFilterEnable", GetFilterEnable);
-        pefSetSensorIface->register_method("SetFilterEnable", SetFilterEnable);
-        pefSetSensorIface->initialize();
-
         sdbusplus::bus::match::match EventFilterTableMonitor =
             startEventFilterTableMonitor(conn);
         sdbusplus::bus::match::match AlertPolicyTableMonitor =
