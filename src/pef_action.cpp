@@ -644,6 +644,10 @@ static uint16_t sendSmtpAlert(struct EventMsgData* eveMsg,
         {
             severity = "Warning";
         }
+        else if (evnDat == 0x04 || evnDat == 0x0B)
+        {
+            severity = "Non-Recoverable";
+        }
 
         if (!assert)
         {
